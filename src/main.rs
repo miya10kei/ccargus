@@ -4,6 +4,7 @@ use ratatui::layout::{Constraint, Direction, Layout};
 
 use crate::app::Focus;
 use crate::components::Component;
+use crate::components::repo_selector::RepoSelector;
 use crate::components::session_tree::{SessionEntry, SessionTree};
 use crate::components::status_line::StatusLine;
 use crate::components::terminal_pane::TerminalPane;
@@ -25,6 +26,7 @@ async fn main() -> Result<()> {
     let mut events = event::EventHandler::new(4.0, 60.0);
     let mut app = app::App::new();
 
+    let mut repo_selector = RepoSelector::new();
     let mut session_tree = SessionTree::new();
     let mut terminal_pane = TerminalPane::new();
 
@@ -33,9 +35,35 @@ async fn main() -> Result<()> {
         match event {
             event::Event::Key(key) => {
                 if key.kind == KeyEventKind::Press {
-                    match app.focus {
-                        Focus::Sessions => handle_sessions_key(&mut app, key.code, key.modifiers),
-                        Focus::Terminal => handle_terminal_key(&mut app, key),
+                    if repo_selector.visible {
+                        repo_selector.handle_key_event(key);
+
+                        if let Some(result) = repo_selector.take_result() {
+                            let size = crossterm::terminal::size().unwrap_or((80, 24));
+                            let name = format!("session-{}", app.session_manager.len() + 1);
+                            let _ = app.session_manager.create_session(
+                                &name,
+                                &result.repo_name,
+                                &result.branch,
+                                &result.working_dir,
+                                size.1,
+                                size.0,
+                            );
+                            app.selected_session = app.session_manager.len().saturating_sub(1);
+                            app.focus = Focus::Terminal;
+                        }
+                    } else {
+                        match app.focus {
+                            Focus::Sessions => {
+                                handle_sessions_key(
+                                    &mut app,
+                                    &mut repo_selector,
+                                    key.code,
+                                    key.modifiers,
+                                );
+                            }
+                            Focus::Terminal => handle_terminal_key(&mut app, key),
+                        }
                     }
                 }
             }
@@ -74,6 +102,8 @@ async fn main() -> Result<()> {
                     session_tree.render(frame, horizontal[0]);
                     terminal_pane.render(frame, horizontal[1]);
                     status_line.render(frame, vertical[1]);
+
+                    repo_selector.render(frame, frame.area());
                 })?;
             }
             event::Event::Resize(..) | event::Event::Tick | event::Event::Error => {}
@@ -101,7 +131,12 @@ fn build_status_line(app: &app::App) -> StatusLine {
     )
 }
 
-fn handle_sessions_key(app: &mut app::App, code: KeyCode, modifiers: KeyModifiers) {
+fn handle_sessions_key(
+    app: &mut app::App,
+    repo_selector: &mut RepoSelector,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) {
     match code {
         KeyCode::Char('q') => app.quit(),
         KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
@@ -114,13 +149,7 @@ fn handle_sessions_key(app: &mut app::App, code: KeyCode, modifiers: KeyModifier
             app.select_prev_session();
         }
         KeyCode::Char('n') => {
-            let cwd = std::env::current_dir()
-                .map_or_else(|_| ".".to_owned(), |p| p.to_string_lossy().to_string());
-            let size = crossterm::terminal::size().unwrap_or((80, 24));
-            let name = format!("session-{}", app.session_manager.len() + 1);
-            let _ = app
-                .session_manager
-                .create_session(&name, "local", "main", &cwd, size.1, size.0);
+            repo_selector.open();
         }
         KeyCode::Char('d') => {
             if !app.session_manager.is_empty() {
