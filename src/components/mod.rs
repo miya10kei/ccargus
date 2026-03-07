@@ -1,3 +1,4 @@
+pub mod repo_selector;
 pub mod session_tree;
 pub mod status_line;
 pub mod terminal_pane;
