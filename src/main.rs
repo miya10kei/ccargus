@@ -3,6 +3,8 @@ use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::widgets::Paragraph;
 
 mod action;
+mod app;
+mod components;
 mod event;
 mod tui;
 
