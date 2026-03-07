@@ -1,3 +1,5 @@
+use crate::domain::session::SessionManager;
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub enum AppState {
     #[default]
@@ -12,11 +14,11 @@ pub enum Focus {
     Terminal,
 }
 
-#[derive(Debug)]
 pub struct App {
     pub state: AppState,
     pub focus: Focus,
     pub selected_session: usize,
+    pub session_manager: SessionManager,
 }
 
 impl App {
@@ -29,6 +31,7 @@ impl App {
             state: AppState::default(),
             focus: Focus::default(),
             selected_session: 0,
+            session_manager: SessionManager::new(),
         }
     }
 
