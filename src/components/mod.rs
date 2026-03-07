@@ -1,3 +1,7 @@
+pub mod session_tree;
+pub mod status_line;
+pub mod terminal_pane;
+
 use crossterm::event::KeyEvent;
 use ratatui::Frame;
 use ratatui::layout::Rect;
