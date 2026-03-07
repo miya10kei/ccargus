@@ -11,6 +11,7 @@ use crate::components::terminal_pane::TerminalPane;
 mod action;
 mod app;
 mod components;
+mod domain;
 mod event;
 mod tui;
 
