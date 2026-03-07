@@ -1,0 +1,30 @@
+[tools]
+rust = "latest"
+
+[tasks.check]
+description = "Run all checks"
+depends = ["format-check", "lint", "test", "deny"]
+
+[tasks.lint]
+description = "Run clippy"
+run = "cargo clippy --all-targets --all-features"
+
+[tasks.format]
+description = "Format code"
+run = ["cargo fmt", "taplo format"]
+
+[tasks.format-check]
+description = "Check formatting"
+run = ["cargo fmt --check", "taplo check"]
+
+[tasks.test]
+description = "Run tests with nextest"
+run = "cargo nextest run"
+
+[tasks.deny]
+description = "Check dependencies"
+run = "cargo deny check"
+
+[tasks.dev]
+description = "Start bacon for background checking"
+run = "bacon"
