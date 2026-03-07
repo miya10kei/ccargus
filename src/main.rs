@@ -4,7 +4,7 @@ use ratatui::layout::{Constraint, Direction, Layout};
 
 use crate::app::Focus;
 use crate::components::Component;
-use crate::components::session_tree::SessionTree;
+use crate::components::session_tree::{SessionEntry, SessionTree};
 use crate::components::status_line::StatusLine;
 use crate::components::terminal_pane::TerminalPane;
 use crate::keys::key_to_bytes;
@@ -42,6 +42,16 @@ async fn main() -> Result<()> {
             event::Event::Render => {
                 session_tree.selected = app.selected_session;
                 session_tree.focused = app.focus == Focus::Sessions;
+                session_tree.sessions = app
+                    .session_manager
+                    .sessions()
+                    .iter()
+                    .map(|s| SessionEntry {
+                        branch: s.branch.clone(),
+                        name: s.name.clone(),
+                        repo: s.repo.clone(),
+                    })
+                    .collect();
                 terminal_pane.focused = app.focus == Focus::Terminal;
                 terminal_pane.screen = app
                     .session_manager
