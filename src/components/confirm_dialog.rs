@@ -8,15 +8,23 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use crate::action::Action;
 use crate::components::Component;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConfirmAction {
+    DeleteWorktree,
+    QuitApp,
+}
+
 pub struct ConfirmDialog {
     pub visible: bool,
-    message: String,
+    action: Option<ConfirmAction>,
     confirmed: Option<bool>,
+    message: String,
 }
 
 impl ConfirmDialog {
     pub fn new() -> Self {
         Self {
+            action: None,
             confirmed: None,
             message: String::new(),
             visible: false,
@@ -27,14 +35,17 @@ impl ConfirmDialog {
         self.visible = false;
     }
 
-    pub fn open(&mut self, message: impl Into<String>) {
-        self.visible = true;
-        self.message = message.into();
+    pub fn open(&mut self, message: impl Into<String>, action: ConfirmAction) {
+        self.action = Some(action);
         self.confirmed = None;
+        self.message = message.into();
+        self.visible = true;
     }
 
-    pub fn take_result(&mut self) -> Option<bool> {
-        self.confirmed.take()
+    pub fn take_result(&mut self) -> Option<(bool, ConfirmAction)> {
+        let confirmed = self.confirmed.take()?;
+        let action = self.action.take()?;
+        Some((confirmed, action))
     }
 }
 
@@ -119,60 +130,79 @@ mod tests {
         let dialog = ConfirmDialog::new();
         assert!(!dialog.visible);
         assert!(dialog.confirmed.is_none());
+        assert!(dialog.action.is_none());
     }
 
     #[test]
-    fn open_makes_visible_with_message() {
+    fn open_makes_visible_with_message_and_action() {
         let mut dialog = ConfirmDialog::new();
-        dialog.open("Delete worktree?");
+        dialog.open("Delete worktree?", ConfirmAction::DeleteWorktree);
         assert!(dialog.visible);
         assert_eq!(dialog.message, "Delete worktree?");
+        assert_eq!(dialog.action, Some(ConfirmAction::DeleteWorktree));
         assert!(dialog.confirmed.is_none());
     }
 
     #[test]
-    fn y_confirms() {
+    fn open_with_quit_action() {
         let mut dialog = ConfirmDialog::new();
-        dialog.open("test");
-        let key = KeyEvent::new(KeyCode::Char('y'), crossterm::event::KeyModifiers::NONE);
-        dialog.handle_key_event(key);
-        assert!(!dialog.visible);
-        assert_eq!(dialog.take_result(), Some(true));
+        dialog.open("Quit ccargus?", ConfirmAction::QuitApp);
+        assert!(dialog.visible);
+        assert_eq!(dialog.message, "Quit ccargus?");
+        assert_eq!(dialog.action, Some(ConfirmAction::QuitApp));
     }
 
     #[test]
-    fn n_denies() {
+    fn y_confirms_with_action() {
         let mut dialog = ConfirmDialog::new();
-        dialog.open("test");
+        dialog.open("test", ConfirmAction::DeleteWorktree);
+        let key = KeyEvent::new(KeyCode::Char('y'), crossterm::event::KeyModifiers::NONE);
+        dialog.handle_key_event(key);
+        assert!(!dialog.visible);
+        assert_eq!(
+            dialog.take_result(),
+            Some((true, ConfirmAction::DeleteWorktree))
+        );
+    }
+
+    #[test]
+    fn n_denies_with_action() {
+        let mut dialog = ConfirmDialog::new();
+        dialog.open("test", ConfirmAction::QuitApp);
         let key = KeyEvent::new(KeyCode::Char('n'), crossterm::event::KeyModifiers::NONE);
         dialog.handle_key_event(key);
         assert!(!dialog.visible);
-        assert_eq!(dialog.take_result(), Some(false));
+        assert_eq!(dialog.take_result(), Some((false, ConfirmAction::QuitApp)));
     }
 
     #[test]
     fn esc_denies() {
         let mut dialog = ConfirmDialog::new();
-        dialog.open("test");
+        dialog.open("test", ConfirmAction::DeleteWorktree);
         let key = KeyEvent::new(KeyCode::Esc, crossterm::event::KeyModifiers::NONE);
         dialog.handle_key_event(key);
         assert!(!dialog.visible);
-        assert_eq!(dialog.take_result(), Some(false));
+        assert_eq!(
+            dialog.take_result(),
+            Some((false, ConfirmAction::DeleteWorktree))
+        );
     }
 
     #[test]
     fn take_result_consumes_result() {
         let mut dialog = ConfirmDialog::new();
         dialog.confirmed = Some(true);
+        dialog.action = Some(ConfirmAction::QuitApp);
         let result = dialog.take_result();
-        assert_eq!(result, Some(true));
+        assert_eq!(result, Some((true, ConfirmAction::QuitApp)));
         assert!(dialog.confirmed.is_none());
+        assert!(dialog.action.is_none());
     }
 
     #[test]
     fn other_keys_are_ignored() {
         let mut dialog = ConfirmDialog::new();
-        dialog.open("test");
+        dialog.open("test", ConfirmAction::DeleteWorktree);
         let key = KeyEvent::new(KeyCode::Char('x'), crossterm::event::KeyModifiers::NONE);
         dialog.handle_key_event(key);
         assert!(dialog.visible);

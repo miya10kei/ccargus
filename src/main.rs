@@ -4,7 +4,7 @@ use ratatui::layout::{Constraint, Direction, Layout};
 
 use crate::app::Focus;
 use crate::components::Component;
-use crate::components::confirm_dialog::ConfirmDialog;
+use crate::components::confirm_dialog::{ConfirmAction, ConfirmDialog};
 use crate::components::editor_float::EditorFloat;
 use crate::components::qa_selector::{QaMode, QaSelector};
 use crate::components::repo_selector::RepoSelector;
@@ -128,14 +128,23 @@ fn handle_key_press(
     if confirm_dialog.visible {
         confirm_dialog.handle_key_event(key);
 
-        if let Some(true) = confirm_dialog.take_result()
-            && let Some(wt) = app.worktree_pool.get(app.selected_worktree)
-        {
-            let entry = wt.to_entry();
-            let _ = worktree_manager.remove_worktree(&entry);
-            app.worktree_pool.remove(app.selected_worktree);
-            if app.selected_worktree >= app.worktree_pool.len() && app.selected_worktree > 0 {
-                app.selected_worktree -= 1;
+        if let Some((true, action)) = confirm_dialog.take_result() {
+            match action {
+                ConfirmAction::DeleteWorktree => {
+                    if let Some(wt) = app.worktree_pool.get(app.selected_worktree) {
+                        let entry = wt.to_entry();
+                        let _ = worktree_manager.remove_worktree(&entry);
+                        app.worktree_pool.remove(app.selected_worktree);
+                        if app.selected_worktree >= app.worktree_pool.len()
+                            && app.selected_worktree > 0
+                        {
+                            app.selected_worktree -= 1;
+                        }
+                    }
+                }
+                ConfirmAction::QuitApp => {
+                    app.quit();
+                }
             }
         }
         return;
@@ -445,14 +454,15 @@ fn handle_worktrees_key(
     key: crossterm::event::KeyEvent,
 ) {
     match key.code {
-        KeyCode::Char('q') => app.quit(),
-        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.quit();
+        KeyCode::Char('q' | 'c')
+            if key.code == KeyCode::Char('q') || key.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
+            confirm_dialog.open("Quit ccargus?", ConfirmAction::QuitApp);
         }
         KeyCode::Char('d') => {
             if let Some(wt) = app.worktree_pool.get(app.selected_worktree) {
                 let message = format!("Delete worktree '{}/{}'?", wt.repo, wt.branch);
-                confirm_dialog.open(message);
+                confirm_dialog.open(message, ConfirmAction::DeleteWorktree);
             }
         }
         KeyCode::Char('e') => {
