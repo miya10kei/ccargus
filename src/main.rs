@@ -73,7 +73,12 @@ async fn main() -> Result<()> {
                 let sizes = calculate_pty_sizes(cols, rows);
                 for wt in app.worktree_pool.all_mut() {
                     let (main_rows, main_cols) = sizes.main_size(wt.has_qa());
-                    wt.resize_pty(main_rows, main_cols, sizes.split_qa_rows, sizes.split_qa_cols);
+                    wt.resize_pty(
+                        main_rows,
+                        main_cols,
+                        sizes.split_qa_rows,
+                        sizes.split_qa_cols,
+                    );
                 }
                 needs_render = true;
             }
@@ -210,7 +215,12 @@ fn handle_key_press(
             if let Some(wt) = app.worktree_pool.get_mut(app.selected_worktree) {
                 let _ = wt.create_qa(fork, sizes.split_qa_rows, sizes.split_qa_cols);
                 let (main_rows, main_cols) = sizes.main_size(true);
-                wt.resize_pty(main_rows, main_cols, sizes.split_qa_rows, sizes.split_qa_cols);
+                wt.resize_pty(
+                    main_rows,
+                    main_cols,
+                    sizes.split_qa_rows,
+                    sizes.split_qa_cols,
+                );
             }
             app.focus = Focus::QaTerminal;
         }
@@ -462,7 +472,12 @@ fn handle_qa_terminal_key(
             wt.close_qa();
             let sizes = current_pty_sizes();
             let (main_rows, main_cols) = sizes.main_size(false);
-            wt.resize_pty(main_rows, main_cols, sizes.split_qa_rows, sizes.split_qa_cols);
+            wt.resize_pty(
+                main_rows,
+                main_cols,
+                sizes.split_qa_rows,
+                sizes.split_qa_cols,
+            );
         }
         app.focus = Focus::Terminal;
         return;
