@@ -8,7 +8,15 @@ use ratatui::widgets::{Block, Borders};
 
 use crate::components::Component;
 
-const PLACEHOLDER_TEXT: &str = "No session selected. Press 'n' to create a new session.";
+const BANNER: &[&str] = &[
+    "  ██████╗ ██████╗  █████╗ ██████╗  ██████╗ ██╗   ██╗███████╗",
+    " ██╔════╝██╔════╝ ██╔══██╗██╔══██╗██╔════╝ ██║   ██║██╔════╝",
+    " ██║     ██║      ███████║██████╔╝██║  ███╗██║   ██║███████╗",
+    " ██║     ██║      ██╔══██║██╔══██╗██║   ██║██║   ██║╚════██║",
+    " ╚██████╗╚██████╗ ██║  ██║██║  ██║╚██████╔╝╚██████╔╝███████║",
+    "  ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝",
+];
+const HINT_TEXT: &str = "Press 'n' to create a new session.";
 
 pub struct TerminalPane {
     pub focused: bool,
@@ -113,14 +121,51 @@ fn convert_color(color: vt100::Color) -> Color {
 }
 
 fn render_placeholder(area: Rect, buf: &mut Buffer) {
-    let x = area.x;
-    let y = area.y;
-    for (i, ch) in PLACEHOLDER_TEXT.chars().enumerate() {
-        let col = x + u16::try_from(i).unwrap_or(0);
-        if col >= area.right() {
+    let banner_height = u16::try_from(BANNER.len()).unwrap_or(0);
+    let banner_width = u16::try_from(
+        BANNER
+            .iter()
+            .map(|line| line.chars().count())
+            .max()
+            .unwrap_or(0),
+    )
+    .unwrap_or(0);
+
+    // Total content height: banner + 1 blank line + hint
+    let content_height = banner_height + 2;
+    let start_y = area.y + area.height.saturating_sub(content_height) / 2;
+
+    let banner_style = Style::default().fg(Color::Cyan);
+
+    for (i, line) in BANNER.iter().enumerate() {
+        let row = start_y + u16::try_from(i).unwrap_or(0);
+        if row >= area.bottom() {
             break;
         }
-        buf[(col, y)].set_char(ch);
+        let start_x = area.x + area.width.saturating_sub(banner_width) / 2;
+        let mut col = start_x;
+        for ch in line.chars() {
+            if col >= area.right() {
+                break;
+            }
+            buf[(col, row)].set_char(ch).set_style(banner_style);
+            col += 1;
+        }
+    }
+
+    // Hint text below the banner
+    let hint_row = start_y + banner_height + 1;
+    if hint_row < area.bottom() {
+        let hint_width = u16::try_from(HINT_TEXT.len()).unwrap_or(0);
+        let hint_x = area.x + area.width.saturating_sub(hint_width) / 2;
+        let hint_style = Style::default().fg(Color::DarkGray);
+        for (i, ch) in HINT_TEXT.chars().enumerate() {
+            let col = hint_x + u16::try_from(i).unwrap_or(0);
+            if col >= area.right() {
+                break;
+            }
+            buf[(col, hint_row)].set_char(ch).set_style(hint_style);
+        }
     }
 }
 
@@ -171,8 +216,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn renders_placeholder_when_no_session() {
-        let backend = TestBackend::new(80, 10);
+    fn renders_banner_when_no_session() {
+        let backend = TestBackend::new(80, 20);
         let mut terminal = Terminal::new(backend).unwrap();
         let pane = TerminalPane::new();
 
@@ -184,14 +229,18 @@ mod tests {
 
         let buffer = terminal.backend().buffer();
         let mut text = String::new();
-        for y in 0..10 {
+        for y in 0..20 {
             for x in 0..80 {
                 text.push_str(buffer[(x, y)].symbol());
             }
         }
         assert!(
-            text.contains("No session selected"),
-            "Should contain placeholder text, got: {text}"
+            text.contains("██████"),
+            "Should contain banner art, got: {text}"
+        );
+        assert!(
+            text.contains("Press 'n' to create a new session."),
+            "Should contain hint text, got: {text}"
         );
     }
 
