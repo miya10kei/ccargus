@@ -124,7 +124,7 @@ fn render_placeholder(area: Rect, buf: &mut Buffer) {
     }
 }
 
-fn render_vt100_screen(vt_screen: &vt100::Screen, area: Rect, buf: &mut Buffer) {
+pub fn render_vt100_screen(vt_screen: &vt100::Screen, area: Rect, buf: &mut Buffer) {
     let rows = usize::from(area.height);
     let cols = usize::from(area.width);
 

@@ -16,6 +16,7 @@ pub enum Focus {
 }
 
 pub struct App {
+    pub editor_visible: bool,
     pub state: AppState,
     pub focus: Focus,
     pub selected_session: usize,
@@ -29,6 +30,7 @@ impl App {
 
     pub fn new() -> Self {
         Self {
+            editor_visible: false,
             state: AppState::default(),
             focus: Focus::default(),
             selected_session: 0,

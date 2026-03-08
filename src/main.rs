@@ -4,11 +4,13 @@ use ratatui::layout::{Constraint, Direction, Layout};
 
 use crate::app::Focus;
 use crate::components::Component;
+use crate::components::editor_float::EditorFloat;
 use crate::components::qa_selector::{QaMode, QaSelector};
 use crate::components::repo_selector::RepoSelector;
 use crate::components::session_tree::{SessionEntry, SessionTree};
 use crate::components::status_line::StatusLine;
 use crate::components::terminal_pane::TerminalPane;
+use crate::config::Config;
 use crate::keys::key_to_bytes;
 
 mod action;
@@ -27,7 +29,9 @@ async fn main() -> Result<()> {
     let mut tui = tui::Tui::new()?;
     let mut events = event::EventHandler::new(4.0, 60.0);
     let mut app = app::App::new();
+    let config = Config::load()?;
 
+    let mut editor_float = EditorFloat::new();
     let mut qa_selector = QaSelector::new();
     let mut repo_selector = RepoSelector::new();
     let mut session_tree = SessionTree::new();
@@ -37,7 +41,14 @@ async fn main() -> Result<()> {
         let event = events.next().await?;
         match event {
             event::Event::Key(key) if key.kind == KeyEventKind::Press => {
-                handle_key_press(&mut app, &mut repo_selector, &mut qa_selector, key);
+                handle_key_press(
+                    &mut app,
+                    &mut editor_float,
+                    &config,
+                    &mut repo_selector,
+                    &mut qa_selector,
+                    key,
+                );
             }
             event::Event::Render => {
                 update_components(&app, &mut session_tree, &mut terminal_pane);
@@ -60,6 +71,7 @@ async fn main() -> Result<()> {
 
                     repo_selector.render(frame, frame.area());
                     qa_selector.render(frame, frame.area());
+                    editor_float.render(frame, frame.area());
                 })?;
             }
             _ => {}
@@ -72,10 +84,28 @@ async fn main() -> Result<()> {
 
 fn handle_key_press(
     app: &mut app::App,
+    editor_float: &mut EditorFloat,
+    config: &Config,
     repo_selector: &mut RepoSelector,
     qa_selector: &mut QaSelector,
     key: crossterm::event::KeyEvent,
 ) {
+    if editor_float.visible {
+        if key.code == KeyCode::Esc {
+            editor_float.close();
+            return;
+        }
+        if !editor_float.is_process_alive() {
+            editor_float.close();
+            return;
+        }
+        let bytes = key_to_bytes(key);
+        if !bytes.is_empty() {
+            let _ = editor_float.write(&bytes);
+        }
+        return;
+    }
+
     if repo_selector.visible {
         repo_selector.handle_key_event(key);
 
@@ -107,7 +137,15 @@ fn handle_key_press(
     } else {
         match app.focus {
             Focus::Sessions => {
-                handle_sessions_key(app, repo_selector, qa_selector, key.code, key.modifiers);
+                handle_sessions_key(
+                    app,
+                    editor_float,
+                    config,
+                    repo_selector,
+                    qa_selector,
+                    key.code,
+                    key.modifiers,
+                );
             }
             Focus::Terminal => handle_terminal_key(app, key),
             Focus::QaTerminal => handle_qa_terminal_key(app, key),
@@ -206,6 +244,8 @@ fn handle_qa_terminal_key(app: &mut app::App, key: crossterm::event::KeyEvent) {
 
 fn handle_sessions_key(
     app: &mut app::App,
+    editor_float: &mut EditorFloat,
+    config: &Config,
     repo_selector: &mut RepoSelector,
     qa_selector: &mut QaSelector,
     code: KeyCode,
@@ -222,6 +262,17 @@ fn handle_sessions_key(
                 if app.selected_session >= app.session_manager.len() && app.selected_session > 0 {
                     app.selected_session -= 1;
                 }
+            }
+        }
+        KeyCode::Char('e') => {
+            if let Some(session) = app.session_manager.get(app.selected_session) {
+                let size = crossterm::terminal::size().unwrap_or((80, 24));
+                let _ = editor_float.open(
+                    &config.editor.command,
+                    session.pty.working_dir(),
+                    size.1,
+                    size.0,
+                );
             }
         }
         KeyCode::Char('j') | KeyCode::Down => {
