@@ -14,18 +14,6 @@ pub struct StatusLine {
     pub status: String,
 }
 
-impl StatusLine {
-    pub fn new() -> Self {
-        Self {
-            branch: String::new(),
-            dir: String::new(),
-            qa_mode: None,
-            repo: String::new(),
-            status: String::new(),
-        }
-    }
-}
-
 impl Component for StatusLine {
     fn render(&self, frame: &mut Frame, area: Rect) {
         let mut spans = vec![

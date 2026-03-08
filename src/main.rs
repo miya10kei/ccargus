@@ -111,9 +111,7 @@ fn handle_key_press(
 
         if let Some(result) = repo_selector.take_result() {
             let size = crossterm::terminal::size().unwrap_or((80, 24));
-            let name = format!("session-{}", app.session_manager.len() + 1);
             let _ = app.session_manager.create_session(
-                &name,
                 &result.repo_name,
                 &result.branch,
                 &result.working_dir,
@@ -166,7 +164,6 @@ fn update_components(
         .iter()
         .map(|s| SessionEntry {
             branch: s.branch.clone(),
-            name: s.name.clone(),
             repo: s.repo.clone(),
         })
         .collect();

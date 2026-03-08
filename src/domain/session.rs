@@ -3,8 +3,6 @@ use color_eyre::Result;
 use super::pty::PtySession;
 
 pub struct SessionInfo {
-    pub id: usize,
-    pub name: String,
     pub repo: String,
     pub branch: String,
     pub pty: PtySession,
@@ -36,39 +34,32 @@ impl SessionInfo {
 }
 
 pub struct SessionManager {
-    next_id: usize,
     sessions: Vec<SessionInfo>,
 }
 
 impl SessionManager {
     pub fn new() -> Self {
         Self {
-            next_id: 1,
             sessions: Vec::new(),
         }
     }
 
     pub fn create_session(
         &mut self,
-        name: &str,
         repo: &str,
         branch: &str,
         working_dir: &str,
         rows: u16,
         cols: u16,
-    ) -> Result<usize> {
+    ) -> Result<()> {
         let pty = PtySession::spawn("claude", working_dir, rows, cols)?;
-        let id = self.next_id;
-        self.next_id += 1;
         self.sessions.push(SessionInfo {
-            id,
-            name: name.to_string(),
             repo: repo.to_string(),
             branch: branch.to_string(),
             pty,
             qa_pty: None,
         });
-        Ok(id)
+        Ok(())
     }
 
     pub fn get(&self, index: usize) -> Option<&SessionInfo> {
@@ -102,23 +93,18 @@ impl SessionManager {
     #[cfg(test)]
     pub fn create_test_session(
         &mut self,
-        name: &str,
         repo: &str,
         branch: &str,
         working_dir: &str,
-    ) -> Result<usize> {
+    ) -> Result<()> {
         let pty = PtySession::spawn("cat", working_dir, 24, 80)?;
-        let id = self.next_id;
-        self.next_id += 1;
         self.sessions.push(SessionInfo {
-            id,
-            name: name.to_string(),
             repo: repo.to_string(),
             branch: branch.to_string(),
             pty,
             qa_pty: None,
         });
-        Ok(id)
+        Ok(())
     }
 }
 
@@ -126,10 +112,10 @@ impl SessionManager {
 mod tests {
     use super::*;
 
-    fn create_test_session(manager: &mut SessionManager) -> usize {
+    fn create_test_session(manager: &mut SessionManager) {
         manager
-            .create_test_session("test-session", "test/repo", "main", "/tmp")
-            .unwrap()
+            .create_test_session("test/repo", "main", "/tmp")
+            .unwrap();
     }
 
     #[test]
@@ -157,15 +143,6 @@ mod tests {
     }
 
     #[test]
-    fn ids_are_sequential() {
-        let mut manager = SessionManager::new();
-        let id1 = create_test_session(&mut manager);
-        let id2 = create_test_session(&mut manager);
-        assert_eq!(id1, 1);
-        assert_eq!(id2, 2);
-    }
-
-    #[test]
     fn remove_session_decreases_len() {
         let mut manager = SessionManager::new();
         create_test_session(&mut manager);
@@ -188,7 +165,7 @@ mod tests {
         create_test_session(&mut manager);
         let session = manager.get(0);
         assert!(session.is_some());
-        assert_eq!(session.unwrap().name, "test-session");
+        assert_eq!(session.unwrap().repo, "test/repo");
     }
 
     #[test]

@@ -1,59 +1,17 @@
-use std::path::Path;
-
 use color_eyre::Result;
 use color_eyre::eyre::eyre;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Repository {
-    /// Full path to the repository root
     pub path: String,
-    /// Display name (e.g., "github.com/miya10kei/ccargus")
     pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Worktree {
-    /// Full path to the worktree
     pub path: String,
-    /// Branch name
     pub branch: String,
-    /// Whether this is the main worktree (bare/main)
     pub is_main: bool,
-}
-
-/// Create a new worktree for a repository.
-/// Runs `git worktree add <path> -b <branch_name>`.
-pub fn create_worktree(repo_path: &str, branch_name: &str) -> Result<Worktree> {
-    let repo_dir = Path::new(repo_path);
-    let repo_name = repo_dir
-        .file_name()
-        .map_or("repo", |n| n.to_str().unwrap_or("repo"));
-    let worktree_path = repo_dir
-        .parent()
-        .unwrap_or(repo_dir)
-        .join(format!("{repo_name}-{branch_name}"));
-
-    let output = std::process::Command::new("git")
-        .args([
-            "worktree",
-            "add",
-            &worktree_path.to_string_lossy(),
-            "-b",
-            branch_name,
-        ])
-        .current_dir(repo_path)
-        .output()?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(eyre!("git worktree add failed: {stderr}"));
-    }
-
-    Ok(Worktree {
-        path: worktree_path.to_string_lossy().to_string(),
-        branch: branch_name.to_string(),
-        is_main: false,
-    })
 }
 
 /// Filter repositories by query string (case-insensitive substring match).

@@ -19,6 +19,7 @@ fn default_qa_session() -> char {
     's'
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Default, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -33,6 +34,7 @@ pub struct EditorConfig {
     pub command: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct KeybindingsConfig {
     #[serde(default = "default_delete_session")]

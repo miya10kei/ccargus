@@ -9,7 +9,6 @@ use crate::components::Component;
 
 pub struct SessionEntry {
     pub branch: String,
-    pub name: String,
     pub repo: String,
 }
 
@@ -134,10 +133,9 @@ mod tests {
 
     use super::*;
 
-    fn make_entry(name: &str, repo: &str, branch: &str) -> SessionEntry {
+    fn make_entry(_name: &str, repo: &str, branch: &str) -> SessionEntry {
         SessionEntry {
             branch: branch.to_owned(),
-            name: name.to_owned(),
             repo: repo.to_owned(),
         }
     }
