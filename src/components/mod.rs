@@ -2,9 +2,9 @@ pub mod confirm_dialog;
 pub mod editor_float;
 pub mod qa_selector;
 pub mod repo_selector;
-pub mod session_tree;
 pub mod status_line;
 pub mod terminal_pane;
+pub mod worktree_tree;
 
 use crossterm::event::KeyEvent;
 use ratatui::Frame;

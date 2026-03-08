@@ -124,9 +124,9 @@ mod tests {
     #[test]
     fn open_makes_visible_with_message() {
         let mut dialog = ConfirmDialog::new();
-        dialog.open("Delete session?");
+        dialog.open("Delete worktree?");
         assert!(dialog.visible);
-        assert_eq!(dialog.message, "Delete session?");
+        assert_eq!(dialog.message, "Delete worktree?");
         assert!(dialog.confirmed.is_none());
     }
 

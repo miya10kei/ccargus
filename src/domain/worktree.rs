@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use color_eyre::Result;
 use color_eyre::eyre::eyre;
 
+use super::pty::PtySession;
 use super::repo::Repository;
 
 #[allow(dead_code)]
@@ -197,6 +198,197 @@ fn resolve_source_repo(worktree_path: &Path) -> Option<String> {
     Some(main_repo.to_string_lossy().to_string())
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorktreeState {
+    Running,
+    Stopped,
+}
+
+#[allow(dead_code, clippy::struct_field_names)]
+pub struct Worktree {
+    pub branch: String,
+    pub pty: Option<PtySession>,
+    pub qa_pty: Option<PtySession>,
+    pub repo: String,
+    pub source_repo_path: String,
+    pub worktree_path: PathBuf,
+}
+
+impl Worktree {
+    pub fn close_qa(&mut self) {
+        if let Some(qa) = &mut self.qa_pty {
+            qa.kill();
+        }
+        self.qa_pty = None;
+    }
+
+    pub fn create_qa(&mut self, fork: bool, rows: u16, cols: u16) -> Result<()> {
+        let working_dir = self.working_dir();
+        let qa_pty = if fork {
+            PtySession::spawn_with_args("claude", &["--continue"], &working_dir, rows, cols)?
+        } else {
+            PtySession::spawn("claude", &working_dir, rows, cols)?
+        };
+        self.qa_pty = Some(qa_pty);
+        Ok(())
+    }
+
+    pub fn from_entry(entry: &WorktreeEntry) -> Self {
+        Self {
+            branch: entry.branch.clone(),
+            pty: None,
+            qa_pty: None,
+            repo: entry.repo_name.clone(),
+            source_repo_path: entry.source_repo_path.clone(),
+            worktree_path: entry.worktree_path.clone(),
+        }
+    }
+
+    pub fn has_qa(&self) -> bool {
+        self.qa_pty.is_some()
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.pty.is_some()
+    }
+
+    pub fn start(&mut self, rows: u16, cols: u16) -> Result<()> {
+        if self.pty.is_some() {
+            return Ok(());
+        }
+        let working_dir = self.working_dir();
+        let pty = PtySession::spawn("claude", &working_dir, rows, cols)?;
+        self.pty = Some(pty);
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn state(&self) -> WorktreeState {
+        if self.is_running() {
+            WorktreeState::Running
+        } else {
+            WorktreeState::Stopped
+        }
+    }
+
+    pub fn stop(&mut self) {
+        self.close_qa();
+        if let Some(pty) = &mut self.pty {
+            pty.kill();
+        }
+        self.pty = None;
+    }
+
+    pub fn to_entry(&self) -> WorktreeEntry {
+        WorktreeEntry {
+            branch: self.branch.clone(),
+            repo_name: self.repo.clone(),
+            source_repo_path: self.source_repo_path.clone(),
+            worktree_path: self.worktree_path.clone(),
+        }
+    }
+
+    pub fn working_dir(&self) -> String {
+        self.worktree_path.to_string_lossy().to_string()
+    }
+}
+
+pub struct WorktreePool {
+    worktrees: Vec<Worktree>,
+}
+
+impl WorktreePool {
+    pub fn new() -> Self {
+        Self {
+            worktrees: Vec::new(),
+        }
+    }
+
+    pub fn add(&mut self, wt: Worktree) {
+        self.worktrees.push(wt);
+    }
+
+    pub fn all(&self) -> &[Worktree] {
+        &self.worktrees
+    }
+
+    pub fn get(&self, index: usize) -> Option<&Worktree> {
+        self.worktrees.get(index)
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut Worktree> {
+        self.worktrees.get_mut(index)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.worktrees.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.worktrees.len()
+    }
+
+    pub fn remove(&mut self, index: usize) {
+        if index < self.worktrees.len() {
+            self.worktrees[index].stop();
+            self.worktrees.remove(index);
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn sync_with_worktrees(&mut self, entries: &[WorktreeEntry]) {
+        // Keep existing worktrees that still have an entry, add new ones
+        let mut new_worktrees: Vec<Worktree> = Vec::new();
+
+        for entry in entries {
+            if let Some(pos) = self
+                .worktrees
+                .iter()
+                .position(|wt| wt.worktree_path == entry.worktree_path)
+            {
+                // Move the existing worktree (preserves running PTY)
+                new_worktrees.push(self.worktrees.remove(pos));
+            } else {
+                new_worktrees.push(Worktree::from_entry(entry));
+            }
+        }
+
+        // Kill remaining worktrees whose entries no longer exist
+        for wt in &mut self.worktrees {
+            wt.stop();
+        }
+
+        self.worktrees = new_worktrees;
+    }
+
+    #[cfg(test)]
+    pub fn add_stopped(&mut self, repo: &str, branch: &str, worktree_path: &str) {
+        self.worktrees.push(Worktree {
+            branch: branch.to_string(),
+            pty: None,
+            qa_pty: None,
+            repo: repo.to_string(),
+            source_repo_path: String::new(),
+            worktree_path: PathBuf::from(worktree_path),
+        });
+    }
+
+    #[cfg(test)]
+    pub fn add_test(&mut self, repo: &str, branch: &str, worktree_path: &str) -> Result<()> {
+        let pty = PtySession::spawn("cat", worktree_path, 24, 80)?;
+        self.worktrees.push(Worktree {
+            branch: branch.to_string(),
+            pty: Some(pty),
+            qa_pty: None,
+            repo: repo.to_string(),
+            source_repo_path: String::new(),
+            worktree_path: PathBuf::from(worktree_path),
+        });
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::process::Command;
@@ -373,5 +565,139 @@ mod tests {
 
         let entries = manager.scan().unwrap();
         assert!(entries.is_empty());
+    }
+
+    fn create_test_worktree(pool: &mut WorktreePool) {
+        pool.add_test("test/repo", "main", "/tmp").unwrap();
+    }
+
+    #[test]
+    fn new_pool_is_empty() {
+        let pool = WorktreePool::new();
+        assert_eq!(pool.len(), 0);
+        assert!(pool.is_empty());
+    }
+
+    #[test]
+    fn add_test_increases_len() {
+        let mut pool = WorktreePool::new();
+        create_test_worktree(&mut pool);
+        assert_eq!(pool.len(), 1);
+        assert!(!pool.is_empty());
+    }
+
+    #[test]
+    fn create_multiple_worktrees() {
+        let mut pool = WorktreePool::new();
+        create_test_worktree(&mut pool);
+        create_test_worktree(&mut pool);
+        create_test_worktree(&mut pool);
+        assert_eq!(pool.len(), 3);
+    }
+
+    #[test]
+    fn remove_decreases_len() {
+        let mut pool = WorktreePool::new();
+        create_test_worktree(&mut pool);
+        create_test_worktree(&mut pool);
+        pool.remove(0);
+        assert_eq!(pool.len(), 1);
+    }
+
+    #[test]
+    fn remove_out_of_bounds_is_safe() {
+        let mut pool = WorktreePool::new();
+        create_test_worktree(&mut pool);
+        pool.remove(99);
+        assert_eq!(pool.len(), 1);
+    }
+
+    #[test]
+    fn get_returns_worktree() {
+        let mut pool = WorktreePool::new();
+        create_test_worktree(&mut pool);
+        let wt = pool.get(0);
+        assert!(wt.is_some());
+        assert_eq!(wt.unwrap().repo, "test/repo");
+    }
+
+    #[test]
+    fn get_out_of_bounds_returns_none() {
+        let pool = WorktreePool::new();
+        assert!(pool.get(99).is_none());
+    }
+
+    #[test]
+    fn worktree_state_stopped_by_default() {
+        let mut pool = WorktreePool::new();
+        pool.add_stopped("test/repo", "main", "/tmp");
+        let wt = pool.get(0).unwrap();
+        assert_eq!(wt.state(), WorktreeState::Stopped);
+        assert!(!wt.is_running());
+    }
+
+    #[test]
+    fn worktree_state_running_with_pty() {
+        let mut pool = WorktreePool::new();
+        create_test_worktree(&mut pool);
+        let wt = pool.get(0).unwrap();
+        assert_eq!(wt.state(), WorktreeState::Running);
+        assert!(wt.is_running());
+    }
+
+    #[test]
+    fn stop_kills_pty() {
+        let mut pool = WorktreePool::new();
+        create_test_worktree(&mut pool);
+        let wt = pool.get_mut(0).unwrap();
+        assert!(wt.is_running());
+        wt.stop();
+        assert!(!wt.is_running());
+    }
+
+    #[test]
+    fn sync_with_worktrees_adds_new_entries() {
+        let mut pool = WorktreePool::new();
+        let entries = vec![WorktreeEntry {
+            branch: "main".to_string(),
+            repo_name: "test/repo".to_string(),
+            source_repo_path: String::new(),
+            worktree_path: PathBuf::from("/tmp/wt1"),
+        }];
+        pool.sync_with_worktrees(&entries);
+        assert_eq!(pool.len(), 1);
+        assert_eq!(pool.get(0).unwrap().branch, "main");
+    }
+
+    #[test]
+    fn sync_with_worktrees_preserves_existing() {
+        let mut pool = WorktreePool::new();
+        pool.add_test("test/repo", "main", "/tmp").unwrap();
+
+        let entries = vec![WorktreeEntry {
+            branch: "main".to_string(),
+            repo_name: "test/repo".to_string(),
+            source_repo_path: String::new(),
+            worktree_path: PathBuf::from("/tmp"),
+        }];
+        pool.sync_with_worktrees(&entries);
+        assert_eq!(pool.len(), 1);
+        assert!(pool.get(0).unwrap().is_running()); // PTY preserved
+    }
+
+    #[test]
+    fn sync_with_worktrees_removes_stale() {
+        let mut pool = WorktreePool::new();
+        pool.add_stopped("test/repo", "old-branch", "/tmp/old");
+
+        let entries = vec![WorktreeEntry {
+            branch: "new-branch".to_string(),
+            repo_name: "test/repo".to_string(),
+            source_repo_path: String::new(),
+            worktree_path: PathBuf::from("/tmp/new"),
+        }];
+        pool.sync_with_worktrees(&entries);
+        assert_eq!(pool.len(), 1);
+        assert_eq!(pool.get(0).unwrap().branch, "new-branch");
     }
 }

@@ -8,9 +8,9 @@ use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::editor_float::EditorFloat;
 use crate::components::qa_selector::{QaMode, QaSelector};
 use crate::components::repo_selector::RepoSelector;
-use crate::components::session_tree::{SessionEntry, SessionTree};
 use crate::components::status_line::StatusLine;
 use crate::components::terminal_pane::TerminalPane;
+use crate::components::worktree_tree::{WorktreeItem, WorktreeTree};
 use crate::config::Config;
 use crate::domain::worktree::WorktreeManager;
 use crate::keys::{key_to_bytes, mouse_to_bytes};
@@ -36,13 +36,13 @@ async fn main() -> Result<()> {
 
     // Scan existing worktrees on startup
     let entries = worktree_manager.scan()?;
-    app.session_manager.sync_with_worktrees(&entries);
+    app.worktree_pool.sync_with_worktrees(&entries);
 
     let mut confirm_dialog = ConfirmDialog::new();
     let mut editor_float = EditorFloat::new();
     let mut qa_selector = QaSelector::new();
     let mut repo_selector = RepoSelector::new();
-    let mut session_tree = SessionTree::new();
+    let mut worktree_tree = WorktreeTree::new();
     let mut terminal_pane = TerminalPane::new();
 
     while app.is_running() {
@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
                 handle_mouse_event(&mut app, &mut editor_float, mouse);
             }
             event::Event::Render => {
-                update_components(&app, &mut session_tree, &mut terminal_pane);
+                update_components(&app, &mut worktree_tree, &mut terminal_pane);
                 let status_line = build_status_line(&app);
 
                 tui.draw(|frame| {
@@ -78,7 +78,7 @@ async fn main() -> Result<()> {
                         .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
                         .split(vertical[0]);
 
-                    session_tree.render(frame, horizontal[0]);
+                    worktree_tree.render(frame, horizontal[0]);
                     terminal_pane.render(frame, horizontal[1]);
                     status_line.render(frame, vertical[1]);
 
@@ -127,13 +127,13 @@ fn handle_key_press(
         confirm_dialog.handle_key_event(key);
 
         if let Some(true) = confirm_dialog.take_result()
-            && let Some(session) = app.session_manager.get(app.selected_session)
+            && let Some(wt) = app.worktree_pool.get(app.selected_worktree)
         {
-            let entry = session.to_worktree_entry();
+            let entry = wt.to_entry();
             let _ = worktree_manager.remove_worktree(&entry);
-            app.session_manager.remove_session(app.selected_session);
-            if app.selected_session >= app.session_manager.len() && app.selected_session > 0 {
-                app.selected_session -= 1;
+            app.worktree_pool.remove(app.selected_worktree);
+            if app.selected_worktree >= app.worktree_pool.len() && app.selected_worktree > 0 {
+                app.selected_worktree -= 1;
             }
         }
         return;
@@ -145,11 +145,11 @@ fn handle_key_press(
         if let Some(result) = repo_selector.take_result() {
             match worktree_manager.add_worktree(&result.repo, &result.branch) {
                 Ok(entry) => {
-                    let mut session = domain::session::SessionInfo::from_worktree_entry(&entry);
+                    let mut wt = domain::worktree::Worktree::from_entry(&entry);
                     let size = crossterm::terminal::size().unwrap_or((80, 24));
-                    let _ = session.start(size.1, size.0);
-                    app.session_manager.add_session(session);
-                    app.selected_session = app.session_manager.len().saturating_sub(1);
+                    let _ = wt.start(size.1, size.0);
+                    app.worktree_pool.add(wt);
+                    app.selected_worktree = app.worktree_pool.len().saturating_sub(1);
                     app.focus = Focus::Terminal;
                 }
                 Err(e) => {
@@ -163,15 +163,15 @@ fn handle_key_press(
         if let Some(mode) = qa_selector.take_result() {
             let size = crossterm::terminal::size().unwrap_or((80, 24));
             let fork = mode == QaMode::Fork;
-            if let Some(session) = app.session_manager.get_mut(app.selected_session) {
-                let _ = session.create_qa_session(fork, size.1, size.0);
+            if let Some(wt) = app.worktree_pool.get_mut(app.selected_worktree) {
+                let _ = wt.create_qa(fork, size.1, size.0);
             }
             app.focus = Focus::QaTerminal;
         }
     } else {
         match app.focus {
-            Focus::Sessions => {
-                handle_sessions_key(
+            Focus::Worktrees => {
+                handle_worktrees_key(
                     app,
                     confirm_dialog,
                     editor_float,
@@ -189,58 +189,58 @@ fn handle_key_press(
 
 fn update_components(
     app: &app::App,
-    session_tree: &mut SessionTree,
+    worktree_tree: &mut WorktreeTree,
     terminal_pane: &mut TerminalPane,
 ) {
-    session_tree.selected = app.selected_session;
-    session_tree.focused = app.focus == Focus::Sessions;
-    session_tree.sessions = app
-        .session_manager
-        .sessions()
+    worktree_tree.selected = app.selected_worktree;
+    worktree_tree.focused = app.focus == Focus::Worktrees;
+    worktree_tree.worktrees = app
+        .worktree_pool
+        .all()
         .iter()
-        .map(|s| SessionEntry {
-            branch: s.branch.clone(),
-            repo: s.repo.clone(),
-            running: s.is_running(),
+        .map(|wt| WorktreeItem {
+            branch: wt.branch.clone(),
+            repo: wt.repo.clone(),
+            running: wt.is_running(),
         })
         .collect();
     terminal_pane.focused = app.focus == Focus::Terminal;
     terminal_pane.qa_focused = app.focus == Focus::QaTerminal;
     terminal_pane.screen = app
-        .session_manager
-        .get(app.selected_session)
-        .and_then(|s| s.pty.as_ref().map(domain::pty::PtySession::screen));
+        .worktree_pool
+        .get(app.selected_worktree)
+        .and_then(|wt| wt.pty.as_ref().map(domain::pty::PtySession::screen));
     terminal_pane.qa_screen = app
-        .session_manager
-        .get(app.selected_session)
-        .and_then(|s| s.qa_pty.as_ref().map(domain::pty::PtySession::screen));
+        .worktree_pool
+        .get(app.selected_worktree)
+        .and_then(|wt| wt.qa_pty.as_ref().map(domain::pty::PtySession::screen));
 }
 
 fn build_status_line(app: &app::App) -> StatusLine {
-    app.session_manager.get(app.selected_session).map_or_else(
+    app.worktree_pool.get(app.selected_worktree).map_or_else(
         || StatusLine {
             branch: String::new(),
             dir: String::new(),
             qa_mode: None,
             repo: String::new(),
-            status: "no session".to_owned(),
+            status: "no worktree".to_owned(),
         },
-        |session| {
-            let qa_mode = if session.has_qa_session() {
+        |wt| {
+            let qa_mode = if wt.has_qa() {
                 Some("active".to_owned())
             } else {
                 None
             };
-            let status = if session.is_running() {
+            let status = if wt.is_running() {
                 "running"
             } else {
                 "stopped"
             };
             StatusLine {
-                branch: session.branch.clone(),
-                dir: session.working_dir(),
+                branch: wt.branch.clone(),
+                dir: wt.working_dir(),
                 qa_mode,
-                repo: session.repo.clone(),
+                repo: wt.repo.clone(),
                 status: status.to_owned(),
             }
         },
@@ -263,12 +263,12 @@ fn handle_mouse_event(
     }
 
     let pty = app
-        .session_manager
-        .get_mut(app.selected_session)
-        .and_then(|s| match app.focus {
-            Focus::Terminal => s.pty.as_mut(),
-            Focus::QaTerminal => s.qa_pty.as_mut(),
-            Focus::Sessions => None,
+        .worktree_pool
+        .get_mut(app.selected_worktree)
+        .and_then(|wt| match app.focus {
+            Focus::Terminal => wt.pty.as_mut(),
+            Focus::QaTerminal => wt.qa_pty.as_mut(),
+            Focus::Worktrees => None,
         });
     if let Some(pty) = pty {
         let _ = pty.write(&bytes);
@@ -278,9 +278,9 @@ fn handle_mouse_event(
 fn handle_qa_terminal_key(app: &mut app::App, key: crossterm::event::KeyEvent) {
     if key.code == KeyCode::Tab {
         let has_qa = app
-            .session_manager
-            .get(app.selected_session)
-            .is_some_and(domain::session::SessionInfo::has_qa_session);
+            .worktree_pool
+            .get(app.selected_worktree)
+            .is_some_and(domain::worktree::Worktree::has_qa);
         app.toggle_focus(has_qa);
         return;
     }
@@ -291,10 +291,10 @@ fn handle_qa_terminal_key(app: &mut app::App, key: crossterm::event::KeyEvent) {
         return;
     }
 
-    // Ctrl+d closes Q&A session
+    // Ctrl+d closes Q&A
     if key.code == KeyCode::Char('d') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        if let Some(session) = app.session_manager.get_mut(app.selected_session) {
-            session.close_qa_session();
+        if let Some(wt) = app.worktree_pool.get_mut(app.selected_worktree) {
+            wt.close_qa();
         }
         app.focus = Focus::Terminal;
         return;
@@ -302,15 +302,15 @@ fn handle_qa_terminal_key(app: &mut app::App, key: crossterm::event::KeyEvent) {
 
     let bytes = key_to_bytes(key);
     if !bytes.is_empty()
-        && let Some(session) = app.session_manager.get_mut(app.selected_session)
-        && let Some(qa) = &mut session.qa_pty
+        && let Some(wt) = app.worktree_pool.get_mut(app.selected_worktree)
+        && let Some(qa) = &mut wt.qa_pty
     {
         let _ = qa.write(&bytes);
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn handle_sessions_key(
+fn handle_worktrees_key(
     app: &mut app::App,
     confirm_dialog: &mut ConfirmDialog,
     editor_float: &mut EditorFloat,
@@ -325,64 +325,60 @@ fn handle_sessions_key(
             app.quit();
         }
         KeyCode::Char('d') => {
-            if let Some(session) = app.session_manager.get(app.selected_session) {
-                let message = format!("Delete session '{}/{}'?", session.repo, session.branch);
+            if let Some(wt) = app.worktree_pool.get(app.selected_worktree) {
+                let message = format!("Delete worktree '{}/{}'?", wt.repo, wt.branch);
                 confirm_dialog.open(message);
             }
         }
         KeyCode::Char('e') => {
-            if let Some(session) = app.session_manager.get(app.selected_session) {
+            if let Some(wt) = app.worktree_pool.get(app.selected_worktree) {
                 let size = crossterm::terminal::size().unwrap_or((80, 24));
-                let _ = editor_float.open(
-                    &config.editor.command,
-                    &session.working_dir(),
-                    size.1,
-                    size.0,
-                );
+                let _ =
+                    editor_float.open(&config.editor.command, &wt.working_dir(), size.1, size.0);
             }
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            app.select_next_session(app.session_manager.len());
+            app.select_next_worktree(app.worktree_pool.len());
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            app.select_prev_session();
+            app.select_prev_worktree();
         }
         KeyCode::Char('n') => {
             repo_selector.open();
         }
         KeyCode::Char('s') => {
-            if let Some(session) = app.session_manager.get(app.selected_session)
-                && session.is_running()
+            if let Some(wt) = app.worktree_pool.get(app.selected_worktree)
+                && wt.is_running()
             {
                 qa_selector.open();
             }
         }
         KeyCode::Char('x') => {
             // Stop PTY without removing worktree
-            if let Some(session) = app.session_manager.get_mut(app.selected_session) {
-                session.stop();
+            if let Some(wt) = app.worktree_pool.get_mut(app.selected_worktree) {
+                wt.stop();
             }
         }
         KeyCode::Enter => {
-            if let Some(session) = app.session_manager.get_mut(app.selected_session) {
-                if session.is_running() {
-                    // Focus into running session
-                    let has_qa = session.has_qa_session();
+            if let Some(wt) = app.worktree_pool.get_mut(app.selected_worktree) {
+                if wt.is_running() {
+                    // Focus into running worktree
+                    let has_qa = wt.has_qa();
                     app.toggle_focus(has_qa);
                 } else {
-                    // Start stopped session
+                    // Start stopped worktree
                     let size = crossterm::terminal::size().unwrap_or((80, 24));
-                    let _ = session.start(size.1, size.0);
+                    let _ = wt.start(size.1, size.0);
                     app.focus = Focus::Terminal;
                 }
             }
         }
         KeyCode::Tab => {
-            if !app.session_manager.is_empty() {
+            if !app.worktree_pool.is_empty() {
                 let has_qa = app
-                    .session_manager
-                    .get(app.selected_session)
-                    .is_some_and(domain::session::SessionInfo::has_qa_session);
+                    .worktree_pool
+                    .get(app.selected_worktree)
+                    .is_some_and(domain::worktree::Worktree::has_qa);
                 app.toggle_focus(has_qa);
             }
         }
@@ -393,9 +389,9 @@ fn handle_sessions_key(
 fn handle_terminal_key(app: &mut app::App, key: crossterm::event::KeyEvent) {
     if key.code == KeyCode::Tab {
         let has_qa = app
-            .session_manager
-            .get(app.selected_session)
-            .is_some_and(domain::session::SessionInfo::has_qa_session);
+            .worktree_pool
+            .get(app.selected_worktree)
+            .is_some_and(domain::worktree::Worktree::has_qa);
         app.toggle_focus(has_qa);
         return;
     }
@@ -408,8 +404,8 @@ fn handle_terminal_key(app: &mut app::App, key: crossterm::event::KeyEvent) {
 
     let bytes = key_to_bytes(key);
     if !bytes.is_empty()
-        && let Some(session) = app.session_manager.get_mut(app.selected_session)
-        && let Some(pty) = &mut session.pty
+        && let Some(wt) = app.worktree_pool.get_mut(app.selected_worktree)
+        && let Some(pty) = &mut wt.pty
     {
         let _ = pty.write(&bytes);
     }

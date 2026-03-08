@@ -16,7 +16,7 @@ const BANNER: &[&str] = &[
     " ╚██████╗╚██████╗ ██║  ██║██║  ██║╚██████╔╝╚██████╔╝███████║",
     "  ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝",
 ];
-const HINT_TEXT: &str = "Press 'n' to create a new session.";
+const HINT_TEXT: &str = "Press 'n' to create a new worktree.";
 
 pub struct TerminalPane {
     pub focused: bool,
@@ -216,7 +216,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn renders_banner_when_no_session() {
+    fn renders_banner_when_no_worktree() {
         let backend = TestBackend::new(80, 20);
         let mut terminal = Terminal::new(backend).unwrap();
         let pane = TerminalPane::new();
@@ -239,7 +239,7 @@ mod tests {
             "Should contain banner art, got: {text}"
         );
         assert!(
-            text.contains("Press 'n' to create a new session."),
+            text.contains("Press 'n' to create a new worktree."),
             "Should contain hint text, got: {text}"
         );
     }
