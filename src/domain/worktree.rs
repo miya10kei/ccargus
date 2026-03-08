@@ -83,12 +83,21 @@ impl WorktreeManager {
     }
 
     pub fn remove_worktree(&self, entry: &WorktreeEntry) -> Result<()> {
+        const PROTECTED_BRANCHES: &[&str] = &["main", "master", "develop"];
+
         let worktree_path_str = entry.worktree_path.to_string_lossy();
         run_git(
             &entry.source_repo_path,
             &["worktree", "remove", "--force", &worktree_path_str],
             "git worktree remove",
         )?;
+        if !PROTECTED_BRANCHES.contains(&entry.branch.as_str()) {
+            let _ = run_git(
+                &entry.source_repo_path,
+                &["branch", "-D", &entry.branch],
+                "git branch -D",
+            );
+        }
 
         // Clean up empty repo directory
         let repo_dir = self.repo_dir(&entry.repo_name);
@@ -495,6 +504,15 @@ mod tests {
 
     use super::*;
 
+    fn branch_exists_in_repo(repo_path: &str, branch: &str) -> bool {
+        let output = Command::new("git")
+            .args(["branch", "--list", branch])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        !String::from_utf8_lossy(&output.stdout).trim().is_empty()
+    }
+
     fn setup_test_repo(dir: &Path) -> String {
         let repo_path = dir.join("source-repo");
         fs::create_dir_all(&repo_path).unwrap();
@@ -593,6 +611,39 @@ mod tests {
 
         manager.remove_worktree(&entry).unwrap();
         assert!(!entry.worktree_path.exists());
+
+        assert!(
+            !branch_exists_in_repo(&repo.path, "feat-add-remove"),
+            "Branch feat-add-remove should be deleted after worktree removal"
+        );
+    }
+
+    #[test]
+    fn remove_worktree_preserves_protected_branches() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("worktrees");
+        let manager = WorktreeManager::new(base).unwrap();
+
+        let repo_path = setup_test_repo(tmp.path());
+        let repo = Repository {
+            path: repo_path,
+            name: "github.com/test/repo".to_string(),
+        };
+
+        Command::new("git")
+            .args(["branch", "develop"])
+            .current_dir(&repo.path)
+            .output()
+            .unwrap();
+
+        let entry = manager.add_worktree(&repo, "develop", None).unwrap();
+        manager.remove_worktree(&entry).unwrap();
+        assert!(!entry.worktree_path.exists());
+
+        assert!(
+            branch_exists_in_repo(&repo.path, "develop"),
+            "Protected branch develop should not be deleted"
+        );
     }
 
     #[test]
@@ -644,13 +695,8 @@ mod tests {
         assert_eq!(entry.branch, "feat-new");
 
         // Verify the branch was actually created in the source repo
-        let output = Command::new("git")
-            .args(["branch", "--list", "feat-new"])
-            .current_dir(&repo.path)
-            .output()
-            .unwrap();
         assert!(
-            !String::from_utf8_lossy(&output.stdout).trim().is_empty(),
+            branch_exists_in_repo(&repo.path, "feat-new"),
             "Branch feat-new should exist in source repo"
         );
     }
