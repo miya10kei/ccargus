@@ -8,6 +8,7 @@ use crate::components::Component;
 
 pub struct StatusLine {
     pub branch: String,
+    pub copy_hint: Option<String>,
     pub dir: String,
     pub qa_mode: Option<String>,
     pub repo: String,
@@ -39,6 +40,13 @@ impl Component for StatusLine {
             ));
         }
 
+        if let Some(hint) = &self.copy_hint {
+            spans.push(Span::styled(
+                format!(" {hint} "),
+                Style::default().fg(Color::Magenta),
+            ));
+        }
+
         let line = Line::from(spans);
         let paragraph = Paragraph::new(line);
         frame.render_widget(paragraph, area);
@@ -58,6 +66,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let status = StatusLine {
             branch: "main".to_owned(),
+            copy_hint: None,
             dir: "/home/user/project".to_owned(),
             qa_mode: None,
             repo: "miya10kei/ccargus".to_owned(),
