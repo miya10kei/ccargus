@@ -173,8 +173,7 @@ impl RepoSelector {
                 let max = self.filtered_repos().len();
                 let current = self.repo_list_state.selected().unwrap_or(0);
                 if max > 0 {
-                    self.repo_list_state
-                        .select(Some((current + max - 1) % max));
+                    self.repo_list_state.select(Some((current + max - 1) % max));
                 }
             }
             SelectorStep::InputBranchName => {}
