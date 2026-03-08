@@ -1,6 +1,7 @@
 use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::widgets::{Block, Borders};
 
 use crate::app::Focus;
 use crate::components::Component;
@@ -68,6 +69,14 @@ async fn main() -> Result<()> {
                 handle_mouse_event(&mut app, &mut editor_float, &mut terminal_pane, mouse);
                 needs_render = true;
             }
+            event::Event::Resize(cols, rows) => {
+                let sizes = calculate_pty_sizes(cols, rows);
+                for wt in app.worktree_pool.all_mut() {
+                    let (main_rows, main_cols) = sizes.main_size(wt.has_qa());
+                    wt.resize_pty(main_rows, main_cols, sizes.split_qa_rows, sizes.split_qa_cols);
+                }
+                needs_render = true;
+            }
             event::Event::Render => {
                 let pty_dirty = app
                     .worktree_pool
@@ -108,9 +117,6 @@ async fn main() -> Result<()> {
                     confirm_dialog.render(frame, frame.area());
                     editor_float.render(frame, frame.area());
                 })?;
-            }
-            event::Event::Resize(_, _) => {
-                needs_render = true;
             }
             _ => {}
         }
@@ -184,8 +190,8 @@ fn handle_key_press(
             ) {
                 Ok(entry) => {
                     let mut wt = domain::worktree::Worktree::from_entry(&entry);
-                    let size = crossterm::terminal::size().unwrap_or((80, 24));
-                    let _ = wt.start(size.1, size.0);
+                    let sizes = current_pty_sizes();
+                    let _ = wt.start(sizes.single_rows, sizes.single_cols);
                     app.worktree_pool.add(wt);
                     app.selected_worktree = app.worktree_pool.len().saturating_sub(1);
                     app.focus = Focus::Terminal;
@@ -199,10 +205,12 @@ fn handle_key_press(
         qa_selector.handle_key_event(key);
 
         if let Some(mode) = qa_selector.take_result() {
-            let size = crossterm::terminal::size().unwrap_or((80, 24));
+            let sizes = current_pty_sizes();
             let fork = mode == QaMode::Fork;
             if let Some(wt) = app.worktree_pool.get_mut(app.selected_worktree) {
-                let _ = wt.create_qa(fork, size.1, size.0);
+                let _ = wt.create_qa(fork, sizes.split_qa_rows, sizes.split_qa_cols);
+                let (main_rows, main_cols) = sizes.main_size(true);
+                wt.resize_pty(main_rows, main_cols, sizes.split_qa_rows, sizes.split_qa_cols);
             }
             app.focus = Focus::QaTerminal;
         }
@@ -452,6 +460,9 @@ fn handle_qa_terminal_key(
     if key.code == KeyCode::Char('d') && key.modifiers.contains(KeyModifiers::CONTROL) {
         if let Some(wt) = app.worktree_pool.get_mut(app.selected_worktree) {
             wt.close_qa();
+            let sizes = current_pty_sizes();
+            let (main_rows, main_cols) = sizes.main_size(false);
+            wt.resize_pty(main_rows, main_cols, sizes.split_qa_rows, sizes.split_qa_cols);
         }
         app.focus = Focus::Terminal;
         return;
@@ -525,8 +536,8 @@ fn handle_worktrees_key(
                     app.toggle_focus(has_qa);
                 } else {
                     // Start stopped worktree
-                    let size = crossterm::terminal::size().unwrap_or((80, 24));
-                    let _ = wt.start(size.1, size.0);
+                    let sizes = current_pty_sizes();
+                    let _ = wt.start(sizes.single_rows, sizes.single_cols);
                     app.focus = Focus::Terminal;
                 }
             }
@@ -541,6 +552,71 @@ fn handle_worktrees_key(
             }
         }
         _ => {}
+    }
+}
+
+struct PtySizes {
+    /// Single pane dimensions (no Q&A active)
+    single_cols: u16,
+    single_rows: u16,
+    /// Split pane dimensions for main terminal (Q&A active)
+    split_main_cols: u16,
+    split_main_rows: u16,
+    /// Split pane dimensions for Q&A terminal
+    split_qa_cols: u16,
+    split_qa_rows: u16,
+}
+
+impl PtySizes {
+    fn main_size(&self, has_qa: bool) -> (u16, u16) {
+        if has_qa {
+            (self.split_main_rows, self.split_main_cols)
+        } else {
+            (self.single_rows, self.single_cols)
+        }
+    }
+}
+
+fn current_pty_sizes() -> PtySizes {
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    calculate_pty_sizes(cols, rows)
+}
+
+fn calculate_pty_sizes(term_cols: u16, term_rows: u16) -> PtySizes {
+    let full = Rect::new(0, 0, term_cols, term_rows);
+
+    // Vertical: content area + status line
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(1)])
+        .split(full);
+
+    // Horizontal: worktree tree (25%) + terminal pane (75%)
+    let horizontal = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
+        .split(vertical[0]);
+
+    let terminal_area = horizontal[1];
+
+    // Single pane (no Q&A): terminal area with border
+    let single_inner = Block::default().borders(Borders::ALL).inner(terminal_area);
+
+    // Split pane (Q&A): 50/50 horizontal split, each with border
+    let split = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(terminal_area);
+    let split_main_inner = Block::default().borders(Borders::ALL).inner(split[0]);
+    let split_qa_inner = Block::default().borders(Borders::ALL).inner(split[1]);
+
+    PtySizes {
+        single_cols: single_inner.width,
+        single_rows: single_inner.height,
+        split_main_cols: split_main_inner.width,
+        split_main_rows: split_main_inner.height,
+        split_qa_cols: split_qa_inner.width,
+        split_qa_rows: split_qa_inner.height,
     }
 }
 

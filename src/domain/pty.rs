@@ -11,6 +11,7 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 pub struct PtySession {
     child: Box<dyn portable_pty::Child + Send + Sync>,
     dirty: Arc<AtomicBool>,
+    master: Box<dyn portable_pty::MasterPty + Send>,
     screen: Arc<Mutex<vt100::Parser>>,
     working_dir: String,
     writer: Box<dyn Write + Send>,
@@ -73,6 +74,7 @@ impl PtySession {
         Ok(Self {
             child,
             dirty,
+            master: pair.master,
             screen,
             working_dir: working_dir.to_owned(),
             writer,
@@ -81,6 +83,21 @@ impl PtySession {
 
     pub fn clear_dirty(&self) {
         self.dirty.store(false, Ordering::Release);
+    }
+
+    pub fn resize(&self, rows: u16, cols: u16) -> Result<()> {
+        self.master
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| eyre!(e))?;
+        if let Ok(mut parser) = self.screen.lock() {
+            parser.screen_mut().set_size(rows, cols);
+        }
+        Ok(())
     }
 
     pub fn is_alive(&mut self) -> bool {
@@ -178,6 +195,15 @@ mod tests {
         let mut session = PtySession::spawn("cat", "/tmp", 24, 80).unwrap();
         assert!(session.is_alive());
         session.kill();
+    }
+
+    #[test]
+    fn resize_updates_pty_and_parser() {
+        let session = PtySession::spawn("cat", "/tmp", 24, 80).unwrap();
+        session.resize(40, 120).unwrap();
+        let screen = session.screen();
+        let parser = screen.lock().unwrap();
+        assert_eq!(parser.screen().size(), (40, 120));
     }
 
     #[test]
