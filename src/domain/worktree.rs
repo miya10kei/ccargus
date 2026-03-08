@@ -288,13 +288,6 @@ fn resolve_source_repo(worktree_path: &Path) -> Option<String> {
     Some(main_repo.to_string_lossy().to_string())
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WorktreeState {
-    Running,
-    Stopped,
-}
-
 #[allow(dead_code, clippy::struct_field_names)]
 pub struct Worktree {
     pub branch: String,
@@ -379,15 +372,6 @@ impl Worktree {
         let pty = PtySession::spawn("claude", &working_dir, rows, cols)?;
         self.pty = Some(pty);
         Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn state(&self) -> WorktreeState {
-        if self.is_running() {
-            WorktreeState::Running
-        } else {
-            WorktreeState::Stopped
-        }
     }
 
     pub fn stop(&mut self) {
@@ -805,20 +789,18 @@ mod tests {
     }
 
     #[test]
-    fn worktree_state_stopped_by_default() {
+    fn stopped_by_default() {
         let mut pool = WorktreePool::new();
         pool.add_stopped("test/repo", "main", "/tmp");
         let wt = pool.get(0).unwrap();
-        assert_eq!(wt.state(), WorktreeState::Stopped);
         assert!(!wt.is_running());
     }
 
     #[test]
-    fn worktree_state_running_with_pty() {
+    fn running_with_pty() {
         let mut pool = WorktreePool::new();
         create_test_worktree(&mut pool);
         let wt = pool.get(0).unwrap();
-        assert_eq!(wt.state(), WorktreeState::Running);
         assert!(wt.is_running());
     }
 

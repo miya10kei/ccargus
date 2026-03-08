@@ -14,6 +14,7 @@ use crate::components::terminal_pane::TerminalPane;
 use crate::components::worktree_tree::{WorktreeItem, WorktreeTree};
 use crate::config::Config;
 use crate::copy_mode::{CopyModeState, ScrollDirection};
+use crate::domain::claude_status::{StatusCache, start_socket_listener};
 use crate::domain::worktree::WorktreeManager;
 use crate::keys::{key_to_bytes, mouse_to_bytes};
 
@@ -32,12 +33,15 @@ async fn main() -> Result<()> {
     color_eyre::install()?;
 
     let mut tui = tui::Tui::new()?;
-    let mut events = event::EventHandler::new(4.0, 60.0);
+    let mut status_cache = StatusCache::new();
+
+    let status_rx = start_socket_listener(status_cache.socket_path());
+    let mut events = event::EventHandler::new(4.0, 60.0, status_rx);
+
     let mut app = app::App::new();
     let config = Config::load()?;
     let worktree_manager = WorktreeManager::new(config.worktree.base_dir.clone())?;
 
-    // Scan existing worktrees on startup
     let entries = worktree_manager.scan()?;
     app.worktree_pool.sync_with_worktrees(&entries);
 
@@ -59,6 +63,7 @@ async fn main() -> Result<()> {
                     &mut confirm_dialog,
                     &mut editor_float,
                     &config,
+                    &mut status_cache,
                     &worktree_manager,
                     &mut repo_selector,
                     &mut qa_selector,
@@ -84,6 +89,9 @@ async fn main() -> Result<()> {
                 }
                 needs_render = true;
             }
+            event::Event::StatusChanged { cwd, status } => {
+                status_cache.update(&cwd, &status);
+            }
             event::Event::Render => {
                 let pty_dirty = app
                     .worktree_pool
@@ -101,8 +109,8 @@ async fn main() -> Result<()> {
                 editor_float.clear_dirty();
                 needs_render = false;
 
-                update_components(&app, &mut worktree_tree, &mut terminal_pane);
-                let status_line = build_status_line(&app, &terminal_pane);
+                update_components(&app, &status_cache, &mut worktree_tree, &mut terminal_pane);
+                let status_line = build_status_line(&app, &status_cache, &terminal_pane);
 
                 tui.draw(|frame| {
                     let vertical = Layout::default()
@@ -130,6 +138,9 @@ async fn main() -> Result<()> {
     }
 
     tui.exit()?;
+
+    let _ = std::fs::remove_file(status_cache.socket_path());
+
     Ok(())
 }
 
@@ -139,6 +150,7 @@ fn handle_key_press(
     confirm_dialog: &mut ConfirmDialog,
     editor_float: &mut EditorFloat,
     config: &Config,
+    status_cache: &mut StatusCache,
     worktree_manager: &WorktreeManager,
     repo_selector: &mut RepoSelector,
     qa_selector: &mut QaSelector,
@@ -169,6 +181,7 @@ fn handle_key_press(
                 ConfirmAction::DeleteWorktree => {
                     if let Some(wt) = app.worktree_pool.get(app.selected_worktree) {
                         let entry = wt.to_entry();
+                        status_cache.cleanup(&wt.working_dir());
                         let _ = worktree_manager.remove_worktree(&entry);
                         app.worktree_pool.remove(app.selected_worktree);
                         if app.selected_worktree >= app.worktree_pool.len()
@@ -234,6 +247,7 @@ fn handle_key_press(
                     confirm_dialog,
                     editor_float,
                     config,
+                    status_cache,
                     repo_selector,
                     qa_selector,
                     key,
@@ -247,6 +261,7 @@ fn handle_key_press(
 
 fn update_components(
     app: &app::App,
+    status_cache: &StatusCache,
     worktree_tree: &mut WorktreeTree,
     terminal_pane: &mut TerminalPane,
 ) {
@@ -259,7 +274,7 @@ fn update_components(
         .map(|wt| WorktreeItem {
             branch: wt.branch.clone(),
             repo: wt.display_name().to_string(),
-            running: wt.is_running(),
+            status: status_cache.read_status(&wt.working_dir(), wt.is_running()),
         })
         .collect();
     terminal_pane.focused = app.focus == Focus::Terminal;
@@ -287,7 +302,11 @@ fn update_components(
     terminal_pane.qa_screen = new_qa_screen;
 }
 
-fn build_status_line(app: &app::App, terminal_pane: &TerminalPane) -> StatusLine {
+fn build_status_line(
+    app: &app::App,
+    status_cache: &StatusCache,
+    terminal_pane: &TerminalPane,
+) -> StatusLine {
     let is_qa = app.focus == Focus::QaTerminal;
     let copy_hint = if terminal_pane.is_in_copy_mode(is_qa) {
         Some("COPY: v=select y=yank q=exit".to_owned())
@@ -305,23 +324,15 @@ fn build_status_line(app: &app::App, terminal_pane: &TerminalPane) -> StatusLine
             status: "no worktree".to_owned(),
         },
         |wt| {
-            let qa_mode = if wt.has_qa() {
-                Some("active".to_owned())
-            } else {
-                None
-            };
-            let status = if wt.is_running() {
-                "running"
-            } else {
-                "stopped"
-            };
+            let qa_mode = wt.has_qa().then(|| "active".to_owned());
+            let claude_status = status_cache.read_status(&wt.working_dir(), wt.is_running());
             StatusLine {
                 branch: wt.branch.clone(),
                 copy_hint,
                 dir: wt.working_dir(),
                 qa_mode,
                 repo: wt.display_name().to_string(),
-                status: status.to_owned(),
+                status: claude_status.label().to_owned(),
             }
         },
     )
@@ -643,6 +654,7 @@ fn handle_worktrees_key(
     confirm_dialog: &mut ConfirmDialog,
     editor_float: &mut EditorFloat,
     config: &Config,
+    status_cache: &mut StatusCache,
     repo_selector: &mut RepoSelector,
     qa_selector: &mut QaSelector,
     key: crossterm::event::KeyEvent,
@@ -683,8 +695,8 @@ fn handle_worktrees_key(
             }
         }
         KeyCode::Char('x') => {
-            // Stop PTY without removing worktree
             if let Some(wt) = app.worktree_pool.get_mut(app.selected_worktree) {
+                status_cache.cleanup(&wt.working_dir());
                 wt.stop();
             }
         }
