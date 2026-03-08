@@ -7,6 +7,7 @@ use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders};
 
 use crate::components::Component;
+use crate::copy_mode::CopyModeState;
 
 const BANNER: &[&str] = &[
     "  ██████╗ ██████╗  █████╗ ██████╗  ██████╗ ██╗   ██╗███████╗",
@@ -19,7 +20,9 @@ const BANNER: &[&str] = &[
 const HINT_TEXT: &str = "Press 'n' to create a new worktree.";
 
 pub struct TerminalPane {
+    pub copy_mode: Option<CopyModeState>,
     pub focused: bool,
+    pub qa_copy_mode: Option<CopyModeState>,
     pub qa_focused: bool,
     pub qa_screen: Option<Arc<Mutex<vt100::Parser>>>,
     pub qa_scroll_offset: usize,
@@ -30,7 +33,9 @@ pub struct TerminalPane {
 impl TerminalPane {
     pub fn new() -> Self {
         Self {
+            copy_mode: None,
             focused: false,
+            qa_copy_mode: None,
             qa_focused: false,
             qa_screen: None,
             qa_scroll_offset: 0,
@@ -39,8 +44,10 @@ impl TerminalPane {
         }
     }
 
-    fn border_color_for(focused: bool, scrolling: bool) -> Color {
-        if scrolling {
+    fn border_color_for(focused: bool, scrolling: bool, copy_mode: bool) -> Color {
+        if copy_mode {
+            Color::Magenta
+        } else if scrolling {
             Color::Yellow
         } else if focused {
             Color::Cyan
@@ -49,8 +56,47 @@ impl TerminalPane {
         }
     }
 
+    pub fn copy_mode_for(&self, qa: bool) -> Option<&CopyModeState> {
+        if qa {
+            self.qa_copy_mode.as_ref()
+        } else {
+            self.copy_mode.as_ref()
+        }
+    }
+
+    pub fn copy_mode_mut(&mut self, qa: bool) -> Option<&mut CopyModeState> {
+        if qa {
+            self.qa_copy_mode.as_mut()
+        } else {
+            self.copy_mode.as_mut()
+        }
+    }
+
+    pub fn enter_copy_mode(&mut self, qa: bool, viewport_rows: usize, viewport_cols: usize) {
+        let state = CopyModeState::new(viewport_rows, viewport_cols);
+        if qa {
+            self.qa_copy_mode = Some(state);
+        } else {
+            self.copy_mode = Some(state);
+        }
+    }
+
+    pub fn exit_copy_mode(&mut self, qa: bool) {
+        if qa {
+            self.qa_copy_mode = None;
+            self.qa_scroll_offset = 0;
+        } else {
+            self.copy_mode = None;
+            self.scroll_offset = 0;
+        }
+    }
+
     pub fn exit_scroll(&mut self, qa: bool) {
         *self.scroll_offset_mut(qa) = 0;
+    }
+
+    pub fn is_in_copy_mode(&self, qa: bool) -> bool {
+        self.copy_mode_for(qa).is_some()
     }
 
     pub fn is_scrolling(&self, qa: bool) -> bool {
@@ -67,7 +113,7 @@ impl TerminalPane {
         *offset = (*offset + lines).min(max_scrollback);
     }
 
-    fn scroll_offset_for(&self, qa: bool) -> usize {
+    pub fn scroll_offset_for(&self, qa: bool) -> usize {
         if qa {
             self.qa_scroll_offset
         } else {
@@ -90,9 +136,13 @@ impl TerminalPane {
         focused: bool,
         scroll_offset: usize,
         screen: Option<&Arc<Mutex<vt100::Parser>>>,
+        copy_mode: Option<&CopyModeState>,
     ) {
         let scrolling = scroll_offset > 0;
-        let title = if scrolling {
+        let in_copy_mode = copy_mode.is_some();
+        let title = if in_copy_mode {
+            format!(" {label} [COPY] ")
+        } else if scrolling {
             format!(" {label} [SCROLL] ")
         } else {
             format!(" {label} ")
@@ -100,7 +150,11 @@ impl TerminalPane {
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Self::border_color_for(focused, scrolling)));
+            .border_style(Style::default().fg(Self::border_color_for(
+                focused,
+                scrolling,
+                in_copy_mode,
+            )));
 
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -109,7 +163,13 @@ impl TerminalPane {
             && let Ok(mut parser) = parser_arc.lock()
         {
             let vt_screen = parser.screen_mut();
-            render_vt100_screen(vt_screen, inner, frame.buffer_mut(), scroll_offset);
+            render_vt100_screen(
+                vt_screen,
+                inner,
+                frame.buffer_mut(),
+                scroll_offset,
+                copy_mode,
+            );
         }
     }
 
@@ -122,12 +182,17 @@ impl TerminalPane {
                 self.focused,
                 self.scroll_offset,
                 self.screen.as_ref(),
+                self.copy_mode.as_ref(),
             );
         } else {
             let block = Block::default()
                 .title(" Terminal ")
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Self::border_color_for(self.focused, false)));
+                .border_style(Style::default().fg(Self::border_color_for(
+                    self.focused,
+                    false,
+                    false,
+                )));
             let inner = block.inner(area);
             frame.render_widget(block, area);
             render_placeholder(inner, frame.buffer_mut());
@@ -147,6 +212,7 @@ impl TerminalPane {
             self.focused,
             self.scroll_offset,
             self.screen.as_ref(),
+            self.copy_mode.as_ref(),
         );
         Self::render_pane(
             frame,
@@ -155,6 +221,7 @@ impl TerminalPane {
             self.qa_focused,
             self.qa_scroll_offset,
             self.qa_screen.as_ref(),
+            self.qa_copy_mode.as_ref(),
         );
     }
 }
@@ -231,6 +298,7 @@ pub fn render_vt100_screen(
     area: Rect,
     buf: &mut Buffer,
     scroll_offset: usize,
+    copy_mode: Option<&CopyModeState>,
 ) {
     let rows = usize::from(area.height);
     let cols = usize::from(area.width);
@@ -253,20 +321,23 @@ pub fn render_vt100_screen(
 
                 let fg = convert_color(cell.fgcolor());
                 let bg = convert_color(cell.bgcolor());
+                let mut modifier = ratatui::style::Modifier::empty();
+
+                if cell.bold() {
+                    modifier |= ratatui::style::Modifier::BOLD;
+                }
+
+                if let Some(cm) = copy_mode {
+                    let is_cursor = cm.cursor.row == row && cm.cursor.col == col;
+                    let is_selected = cm.is_selected(row, col);
+                    if is_cursor || is_selected {
+                        modifier |= ratatui::style::Modifier::REVERSED;
+                    }
+                }
 
                 let buf_cell = &mut buf[(buf_x, buf_y)];
                 buf_cell.set_symbol(symbol);
-                buf_cell.set_fg(fg);
-                buf_cell.set_bg(bg);
-
-                if cell.bold() {
-                    buf_cell.set_style(
-                        Style::default()
-                            .fg(fg)
-                            .bg(bg)
-                            .add_modifier(ratatui::style::Modifier::BOLD),
-                    );
-                }
+                buf_cell.set_style(Style::default().fg(fg).bg(bg).add_modifier(modifier));
             }
         }
     }
@@ -322,7 +393,9 @@ mod tests {
         }
 
         let pane = TerminalPane {
+            copy_mode: None,
             focused: true,
+            qa_copy_mode: None,
             qa_focused: false,
             qa_screen: None,
             qa_scroll_offset: 0,
@@ -454,7 +527,9 @@ mod tests {
         let parser = Arc::new(Mutex::new(vt100::Parser::new(8, 38, 0)));
 
         let pane = TerminalPane {
+            copy_mode: None,
             focused: true,
+            qa_copy_mode: None,
             qa_focused: false,
             qa_screen: None,
             qa_scroll_offset: 0,
@@ -487,7 +562,9 @@ mod tests {
         let parser = Arc::new(Mutex::new(vt100::Parser::new(8, 38, 0)));
 
         let pane = TerminalPane {
+            copy_mode: None,
             focused: true,
+            qa_copy_mode: None,
             qa_focused: false,
             qa_screen: None,
             qa_scroll_offset: 0,
@@ -529,7 +606,9 @@ mod tests {
 
         // With scroll_offset=0, should see the current visible screen
         let pane = TerminalPane {
+            copy_mode: None,
             focused: true,
+            qa_copy_mode: None,
             qa_focused: false,
             qa_screen: None,
             qa_scroll_offset: 0,
@@ -557,7 +636,9 @@ mod tests {
 
         // With scroll_offset > 0, should see scrollback content
         let pane_scrolled = TerminalPane {
+            copy_mode: None,
             focused: true,
+            qa_copy_mode: None,
             qa_focused: false,
             qa_screen: None,
             qa_scroll_offset: 0,
