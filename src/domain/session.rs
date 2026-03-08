@@ -52,6 +52,15 @@ impl SessionInfo {
         }
     }
 
+    pub fn to_worktree_entry(&self) -> WorktreeEntry {
+        WorktreeEntry {
+            branch: self.branch.clone(),
+            repo_name: self.repo.clone(),
+            source_repo_path: self.source_repo_path.clone(),
+            worktree_path: self.worktree_path.clone(),
+        }
+    }
+
     pub fn has_qa_session(&self) -> bool {
         self.qa_pty.is_some()
     }
