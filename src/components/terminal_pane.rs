@@ -106,9 +106,9 @@ impl TerminalPane {
         frame.render_widget(block, area);
 
         if let Some(parser_arc) = screen
-            && let Ok(parser) = parser_arc.lock()
+            && let Ok(mut parser) = parser_arc.lock()
         {
-            let vt_screen = parser.screen();
+            let vt_screen = parser.screen_mut();
             render_vt100_screen(vt_screen, inner, frame.buffer_mut(), scroll_offset);
         }
     }
@@ -227,7 +227,7 @@ fn render_placeholder(area: Rect, buf: &mut Buffer) {
 }
 
 pub fn render_vt100_screen(
-    vt_screen: &vt100::Screen,
+    vt_screen: &mut vt100::Screen,
     area: Rect,
     buf: &mut Buffer,
     scroll_offset: usize,
@@ -235,15 +235,11 @@ pub fn render_vt100_screen(
     let rows = usize::from(area.height);
     let cols = usize::from(area.width);
 
-    // Use vt100's built-in scrollback support: set_scrollback positions the
-    // viewport within the scrollback buffer, and cell() returns the appropriate
-    // content automatically. We need a mutable clone to call set_scrollback.
-    let mut screen = vt_screen.clone();
-    screen.set_scrollback(scroll_offset);
+    vt_screen.set_scrollback(scroll_offset);
 
     for row in 0..rows {
         for col in 0..cols {
-            let cell = screen.cell(
+            let cell = vt_screen.cell(
                 u16::try_from(row).unwrap_or(0),
                 u16::try_from(col).unwrap_or(0),
             );
@@ -274,6 +270,8 @@ pub fn render_vt100_screen(
             }
         }
     }
+
+    vt_screen.set_scrollback(0);
 }
 
 #[cfg(test)]

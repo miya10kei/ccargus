@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -9,6 +10,7 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 #[allow(dead_code)]
 pub struct PtySession {
     child: Box<dyn portable_pty::Child + Send + Sync>,
+    dirty: Arc<AtomicBool>,
     screen: Arc<Mutex<vt100::Parser>>,
     working_dir: String,
     writer: Box<dyn Write + Send>,
@@ -48,7 +50,9 @@ impl PtySession {
         let mut reader = pair.master.try_clone_reader().map_err(|e| eyre!(e))?;
         let writer = pair.master.take_writer().map_err(|e| eyre!(e))?;
 
+        let dirty = Arc::new(AtomicBool::new(true));
         let screen = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 1000)));
+        let dirty_clone = Arc::clone(&dirty);
         let screen_clone = Arc::clone(&screen);
 
         thread::spawn(move || {
@@ -59,6 +63,7 @@ impl PtySession {
                     Ok(n) => {
                         if let Ok(mut parser) = screen_clone.lock() {
                             parser.process(&buf[..n]);
+                            dirty_clone.store(true, Ordering::Release);
                         }
                     }
                 }
@@ -67,10 +72,15 @@ impl PtySession {
 
         Ok(Self {
             child,
+            dirty,
             screen,
             working_dir: working_dir.to_owned(),
             writer,
         })
+    }
+
+    pub fn clear_dirty(&self) {
+        self.dirty.store(false, Ordering::Release);
     }
 
     pub fn is_alive(&mut self) -> bool {
@@ -78,6 +88,10 @@ impl PtySession {
             .try_wait()
             .ok()
             .is_none_or(|status| status.is_none())
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.dirty.load(Ordering::Acquire)
     }
 
     pub fn kill(&mut self) {
@@ -125,6 +139,31 @@ mod tests {
     fn working_dir_returns_correct_path() {
         let session = PtySession::spawn("echo", "/tmp", 24, 80).unwrap();
         assert_eq!(session.working_dir(), "/tmp");
+    }
+
+    #[test]
+    fn clear_dirty_resets_flag() {
+        let session = PtySession::spawn("echo", "/tmp", 24, 80).unwrap();
+        assert!(session.is_dirty());
+        session.clear_dirty();
+        assert!(!session.is_dirty());
+    }
+
+    #[test]
+    fn dirty_flag_is_true_initially() {
+        let session = PtySession::spawn("echo", "/tmp", 24, 80).unwrap();
+        assert!(session.is_dirty());
+    }
+
+    #[test]
+    fn dirty_flag_set_on_pty_output() {
+        let mut session = PtySession::spawn("cat", "/tmp", 24, 80).unwrap();
+        session.clear_dirty();
+        assert!(!session.is_dirty());
+        session.write(b"hello\n").unwrap();
+        thread::sleep(Duration::from_millis(100));
+        assert!(session.is_dirty());
+        session.kill();
     }
 
     #[test]
