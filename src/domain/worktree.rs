@@ -213,7 +213,16 @@ mod tests {
             .output()
             .unwrap();
         Command::new("git")
-            .args(["commit", "--allow-empty", "-m", "init"])
+            .args([
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@test.com",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ])
             .current_dir(&repo_path)
             .output()
             .unwrap();
