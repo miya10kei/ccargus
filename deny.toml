@@ -1,5 +1,4 @@
 [advisories]
-unmaintained = "workspace"
 
 [licenses]
 confidence-threshold = 0.8
