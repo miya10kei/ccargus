@@ -145,7 +145,11 @@ fn handle_key_press(
         repo_selector.handle_key_event(key);
 
         if let Some(result) = repo_selector.take_result() {
-            match worktree_manager.add_worktree(&result.repo, &result.branch) {
+            match worktree_manager.add_worktree(
+                &result.repo,
+                &result.branch,
+                result.base_branch.as_deref(),
+            ) {
                 Ok(entry) => {
                     let mut wt = domain::worktree::Worktree::from_entry(&entry);
                     let size = crossterm::terminal::size().unwrap_or((80, 24));
