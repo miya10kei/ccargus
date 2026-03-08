@@ -13,6 +13,7 @@ pub enum Event {
     Mouse(MouseEvent),
     Render,
     Resize(u16, u16),
+    StatusChanged { cwd: String, status: String },
     Tick,
 }
 
@@ -23,7 +24,11 @@ pub struct EventHandler {
 }
 
 impl EventHandler {
-    pub fn new(tick_rate: f64, frame_rate: f64) -> Self {
+    pub fn new(
+        tick_rate: f64,
+        frame_rate: f64,
+        mut status_rx: mpsc::UnboundedReceiver<(String, String)>,
+    ) -> Self {
         let tick_interval = Duration::from_secs_f64(1.0 / tick_rate);
         let render_interval = Duration::from_secs_f64(1.0 / frame_rate);
         let (tx, rx) = mpsc::unbounded_channel();
@@ -43,6 +48,10 @@ impl EventHandler {
                         Some(Ok(crossterm::event::Event::Resize(cols, rows))) => Event::Resize(cols, rows),
                         Some(Err(_)) => Event::Error,
                         _ => continue,
+                    },
+                    status = status_rx.recv() => match status {
+                        Some((cwd, status)) => Event::StatusChanged { cwd, status },
+                        None => continue,
                     },
                 };
 
@@ -69,13 +78,15 @@ mod tests {
 
     #[tokio::test]
     async fn event_handler_creation_does_not_panic() {
-        let _handler = EventHandler::new(4.0, 60.0);
+        let (_tx, rx) = mpsc::unbounded_channel();
+        let _handler = EventHandler::new(4.0, 60.0, rx);
     }
 
     #[tokio::test]
     #[ignore = "requires a real terminal"]
     async fn event_handler_receives_tick() {
-        let mut handler = EventHandler::new(4.0, 60.0);
+        let (_tx, rx) = mpsc::unbounded_channel();
+        let mut handler = EventHandler::new(4.0, 60.0, rx);
         let event = tokio::time::timeout(Duration::from_secs(1), handler.next())
             .await
             .expect("timed out waiting for event")

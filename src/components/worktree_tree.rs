@@ -1,16 +1,16 @@
-use std::collections::BTreeMap;
-
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 
 use crate::components::Component;
+use crate::domain::claude_status::ClaudeStatus;
 
 pub struct WorktreeItem {
     pub branch: String,
     pub repo: String,
-    pub running: bool,
+    pub status: ClaudeStatus,
 }
 
 pub struct WorktreeTree {
@@ -48,18 +48,18 @@ impl WorktreeTree {
         for (repo, entries) in &groups {
             items.push(ListItem::new(format!("\u{25bc} {repo}")));
             for entry in entries {
-                let marker = if entry.running {
-                    "\u{25b6}" // ▶ running
-                } else {
-                    "\u{25cb}" // ○ stopped
-                };
+                let marker = entry.status.icon();
                 let is_selected = flat_index == self.selected;
+                let marker_color = entry.status.color();
                 let style = if is_selected {
                     Style::default().fg(Color::Cyan)
                 } else {
                     Style::default()
                 };
-                items.push(ListItem::new(format!("  {marker} {}", entry.branch)).style(style));
+                let marker_span =
+                    Span::styled(format!("  {marker} "), Style::default().fg(marker_color));
+                let branch_span = Span::styled(entry.branch.clone(), style);
+                items.push(ListItem::new(Line::from(vec![marker_span, branch_span])));
                 flat_index += 1;
             }
         }
@@ -92,24 +92,17 @@ impl WorktreeTree {
 }
 
 pub fn group_by_repo(worktrees: &[WorktreeItem]) -> Vec<(String, Vec<&WorktreeItem>)> {
-    if worktrees.is_empty() {
-        return Vec::new();
-    }
-
-    let mut order: Vec<String> = Vec::new();
-    let mut map: BTreeMap<&str, Vec<&WorktreeItem>> = BTreeMap::new();
+    let mut groups: Vec<(String, Vec<&WorktreeItem>)> = Vec::new();
 
     for wt in worktrees {
-        if !map.contains_key(wt.repo.as_str()) {
-            order.push(wt.repo.clone());
+        if let Some(group) = groups.iter_mut().find(|(repo, _)| repo == &wt.repo) {
+            group.1.push(wt);
+        } else {
+            groups.push((wt.repo.clone(), vec![wt]));
         }
-        map.entry(&wt.repo).or_default().push(wt);
     }
 
-    order
-        .into_iter()
-        .filter_map(|repo| map.remove(repo.as_str()).map(|entries| (repo, entries)))
-        .collect()
+    groups
 }
 
 impl Component for WorktreeTree {
@@ -144,7 +137,7 @@ mod tests {
         WorktreeItem {
             branch: branch.to_owned(),
             repo: repo.to_owned(),
-            running: true,
+            status: ClaudeStatus::Processing,
         }
     }
 
