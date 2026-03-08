@@ -22,7 +22,9 @@ pub struct TerminalPane {
     pub focused: bool,
     pub qa_focused: bool,
     pub qa_screen: Option<Arc<Mutex<vt100::Parser>>>,
+    pub qa_scroll_offset: usize,
     pub screen: Option<Arc<Mutex<vt100::Parser>>>,
+    pub scroll_offset: usize,
 }
 
 impl TerminalPane {
@@ -31,33 +33,103 @@ impl TerminalPane {
             focused: false,
             qa_focused: false,
             qa_screen: None,
+            qa_scroll_offset: 0,
             screen: None,
+            scroll_offset: 0,
         }
     }
 
-    fn border_color_for(focused: bool) -> Color {
-        if focused {
+    fn border_color_for(focused: bool, scrolling: bool) -> Color {
+        if scrolling {
+            Color::Yellow
+        } else if focused {
             Color::Cyan
         } else {
             Color::DarkGray
         }
     }
 
-    fn render_single_pane(&self, frame: &mut Frame, area: Rect) {
+    pub fn exit_scroll(&mut self, qa: bool) {
+        *self.scroll_offset_mut(qa) = 0;
+    }
+
+    pub fn is_scrolling(&self, qa: bool) -> bool {
+        self.scroll_offset_for(qa) > 0
+    }
+
+    pub fn scroll_down(&mut self, qa: bool, lines: usize) {
+        let offset = self.scroll_offset_mut(qa);
+        *offset = offset.saturating_sub(lines);
+    }
+
+    pub fn scroll_up(&mut self, qa: bool, lines: usize, max_scrollback: usize) {
+        let offset = self.scroll_offset_mut(qa);
+        *offset = (*offset + lines).min(max_scrollback);
+    }
+
+    fn scroll_offset_for(&self, qa: bool) -> usize {
+        if qa {
+            self.qa_scroll_offset
+        } else {
+            self.scroll_offset
+        }
+    }
+
+    fn scroll_offset_mut(&mut self, qa: bool) -> &mut usize {
+        if qa {
+            &mut self.qa_scroll_offset
+        } else {
+            &mut self.scroll_offset
+        }
+    }
+
+    fn render_pane(
+        frame: &mut Frame,
+        area: Rect,
+        label: &str,
+        focused: bool,
+        scroll_offset: usize,
+        screen: Option<&Arc<Mutex<vt100::Parser>>>,
+    ) {
+        let scrolling = scroll_offset > 0;
+        let title = if scrolling {
+            format!(" {label} [SCROLL] ")
+        } else {
+            format!(" {label} ")
+        };
         let block = Block::default()
-            .title(" Terminal ")
+            .title(title)
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Self::border_color_for(self.focused)));
+            .border_style(Style::default().fg(Self::border_color_for(focused, scrolling)));
 
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
-        if let Some(parser_arc) = &self.screen {
-            if let Ok(parser) = parser_arc.lock() {
-                let vt_screen = parser.screen();
-                render_vt100_screen(vt_screen, inner, frame.buffer_mut());
-            }
+        if let Some(parser_arc) = screen
+            && let Ok(parser) = parser_arc.lock()
+        {
+            let vt_screen = parser.screen();
+            render_vt100_screen(vt_screen, inner, frame.buffer_mut(), scroll_offset);
+        }
+    }
+
+    fn render_single_pane(&self, frame: &mut Frame, area: Rect) {
+        if self.screen.is_some() {
+            Self::render_pane(
+                frame,
+                area,
+                "Terminal",
+                self.focused,
+                self.scroll_offset,
+                self.screen.as_ref(),
+            );
         } else {
+            let block = Block::default()
+                .title(" Terminal ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Self::border_color_for(self.focused, false)));
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
             render_placeholder(inner, frame.buffer_mut());
         }
     }
@@ -68,37 +140,22 @@ impl TerminalPane {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(area);
 
-        // Main terminal (left)
-        let main_block = Block::default()
-            .title(" Terminal ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Self::border_color_for(self.focused)));
-
-        let main_inner = main_block.inner(horizontal[0]);
-        frame.render_widget(main_block, horizontal[0]);
-
-        if let Some(parser_arc) = &self.screen
-            && let Ok(parser) = parser_arc.lock()
-        {
-            let vt_screen = parser.screen();
-            render_vt100_screen(vt_screen, main_inner, frame.buffer_mut());
-        }
-
-        // Q&A terminal (right)
-        let qa_block = Block::default()
-            .title(" Q&A ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Self::border_color_for(self.qa_focused)));
-
-        let qa_inner = qa_block.inner(horizontal[1]);
-        frame.render_widget(qa_block, horizontal[1]);
-
-        if let Some(parser_arc) = &self.qa_screen
-            && let Ok(parser) = parser_arc.lock()
-        {
-            let vt_screen = parser.screen();
-            render_vt100_screen(vt_screen, qa_inner, frame.buffer_mut());
-        }
+        Self::render_pane(
+            frame,
+            horizontal[0],
+            "Terminal",
+            self.focused,
+            self.scroll_offset,
+            self.screen.as_ref(),
+        );
+        Self::render_pane(
+            frame,
+            horizontal[1],
+            "Q&A",
+            self.qa_focused,
+            self.qa_scroll_offset,
+            self.qa_screen.as_ref(),
+        );
     }
 }
 
@@ -169,13 +226,24 @@ fn render_placeholder(area: Rect, buf: &mut Buffer) {
     }
 }
 
-pub fn render_vt100_screen(vt_screen: &vt100::Screen, area: Rect, buf: &mut Buffer) {
+pub fn render_vt100_screen(
+    vt_screen: &vt100::Screen,
+    area: Rect,
+    buf: &mut Buffer,
+    scroll_offset: usize,
+) {
     let rows = usize::from(area.height);
     let cols = usize::from(area.width);
 
+    // Use vt100's built-in scrollback support: set_scrollback positions the
+    // viewport within the scrollback buffer, and cell() returns the appropriate
+    // content automatically. We need a mutable clone to call set_scrollback.
+    let mut screen = vt_screen.clone();
+    screen.set_scrollback(scroll_offset);
+
     for row in 0..rows {
         for col in 0..cols {
-            let cell = vt_screen.cell(
+            let cell = screen.cell(
                 u16::try_from(row).unwrap_or(0),
                 u16::try_from(col).unwrap_or(0),
             );
@@ -259,7 +327,9 @@ mod tests {
             focused: true,
             qa_focused: false,
             qa_screen: None,
+            qa_scroll_offset: 0,
             screen: Some(Arc::clone(&parser)),
+            scroll_offset: 0,
         };
 
         terminal
@@ -296,6 +366,223 @@ mod tests {
         assert_eq!(
             convert_color(vt100::Color::Rgb(255, 0, 0)),
             Color::Rgb(255, 0, 0)
+        );
+    }
+
+    #[test]
+    fn exit_scroll_resets_offset() {
+        let mut pane = TerminalPane::new();
+        pane.scroll_offset = 10;
+        pane.exit_scroll(false);
+        assert_eq!(pane.scroll_offset, 0);
+    }
+
+    #[test]
+    fn exit_qa_scroll_resets_offset() {
+        let mut pane = TerminalPane::new();
+        pane.qa_scroll_offset = 5;
+        pane.exit_scroll(true);
+        assert_eq!(pane.qa_scroll_offset, 0);
+    }
+
+    #[test]
+    fn is_scrolling_reflects_offset() {
+        let mut pane = TerminalPane::new();
+        assert!(!pane.is_scrolling(false));
+        pane.scroll_offset = 1;
+        assert!(pane.is_scrolling(false));
+    }
+
+    #[test]
+    fn is_qa_scrolling_reflects_offset() {
+        let mut pane = TerminalPane::new();
+        assert!(!pane.is_scrolling(true));
+        pane.qa_scroll_offset = 1;
+        assert!(pane.is_scrolling(true));
+    }
+
+    #[test]
+    fn scroll_down_saturates_at_zero() {
+        let mut pane = TerminalPane::new();
+        pane.scroll_offset = 2;
+        pane.scroll_down(false, 5);
+        assert_eq!(pane.scroll_offset, 0);
+    }
+
+    #[test]
+    fn scroll_up_clamps_to_max() {
+        let mut pane = TerminalPane::new();
+        pane.scroll_up(false, 100, 50);
+        assert_eq!(pane.scroll_offset, 50);
+    }
+
+    #[test]
+    fn scroll_up_increments_offset() {
+        let mut pane = TerminalPane::new();
+        pane.scroll_up(false, 3, 100);
+        assert_eq!(pane.scroll_offset, 3);
+        pane.scroll_up(false, 5, 100);
+        assert_eq!(pane.scroll_offset, 8);
+    }
+
+    #[test]
+    fn scroll_down_decrements_offset() {
+        let mut pane = TerminalPane::new();
+        pane.scroll_offset = 10;
+        pane.scroll_down(false, 3);
+        assert_eq!(pane.scroll_offset, 7);
+    }
+
+    #[test]
+    fn qa_scroll_up_clamps_to_max() {
+        let mut pane = TerminalPane::new();
+        pane.scroll_up(true, 100, 30);
+        assert_eq!(pane.qa_scroll_offset, 30);
+    }
+
+    #[test]
+    fn qa_scroll_down_saturates_at_zero() {
+        let mut pane = TerminalPane::new();
+        pane.qa_scroll_offset = 1;
+        pane.scroll_down(true, 5);
+        assert_eq!(pane.qa_scroll_offset, 0);
+    }
+
+    #[test]
+    fn renders_scroll_indicator_in_title() {
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let parser = Arc::new(Mutex::new(vt100::Parser::new(8, 38, 0)));
+
+        let pane = TerminalPane {
+            focused: true,
+            qa_focused: false,
+            qa_screen: None,
+            qa_scroll_offset: 0,
+            screen: Some(Arc::clone(&parser)),
+            scroll_offset: 5,
+        };
+
+        terminal
+            .draw(|frame| {
+                pane.render(frame, frame.area());
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut text = String::new();
+        for x in 0..40 {
+            text.push_str(buffer[(x, 0)].symbol());
+        }
+        assert!(
+            text.contains("[SCROLL]"),
+            "Should contain [SCROLL] indicator, got: {text}"
+        );
+    }
+
+    #[test]
+    fn renders_yellow_border_when_scrolling() {
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let parser = Arc::new(Mutex::new(vt100::Parser::new(8, 38, 0)));
+
+        let pane = TerminalPane {
+            focused: true,
+            qa_focused: false,
+            qa_screen: None,
+            qa_scroll_offset: 0,
+            screen: Some(Arc::clone(&parser)),
+            scroll_offset: 1,
+        };
+
+        terminal
+            .draw(|frame| {
+                pane.render(frame, frame.area());
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        // Top-left corner border cell should be yellow
+        let border_cell = &buffer[(0, 0)];
+        assert_eq!(
+            border_cell.fg,
+            Color::Yellow,
+            "Border should be yellow when scrolling"
+        );
+    }
+
+    #[test]
+    fn renders_scrollback_content() {
+        let backend = TestBackend::new(42, 6);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        // Create a parser with scrollback buffer (4 visible rows, 40 cols, 100 scrollback)
+        let parser = Arc::new(Mutex::new(vt100::Parser::new(4, 40, 100)));
+        {
+            let mut p = parser.lock().unwrap();
+            // Write enough lines to push content into scrollback
+            for i in 0..10 {
+                p.process(format!("line {i}\r\n").as_bytes());
+            }
+            p.process(b"current");
+        }
+
+        // With scroll_offset=0, should see the current visible screen
+        let pane = TerminalPane {
+            focused: true,
+            qa_focused: false,
+            qa_screen: None,
+            qa_scroll_offset: 0,
+            screen: Some(Arc::clone(&parser)),
+            scroll_offset: 0,
+        };
+
+        terminal
+            .draw(|frame| {
+                pane.render(frame, frame.area());
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut text = String::new();
+        for y in 0..6 {
+            for x in 0..42 {
+                text.push_str(buffer[(x, y)].symbol());
+            }
+        }
+        assert!(
+            text.contains("current"),
+            "Should show current screen content, got: {text}"
+        );
+
+        // With scroll_offset > 0, should see scrollback content
+        let pane_scrolled = TerminalPane {
+            focused: true,
+            qa_focused: false,
+            qa_screen: None,
+            qa_scroll_offset: 0,
+            screen: Some(Arc::clone(&parser)),
+            scroll_offset: 6,
+        };
+
+        terminal
+            .draw(|frame| {
+                pane_scrolled.render(frame, frame.area());
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut text = String::new();
+        for y in 0..6 {
+            for x in 0..42 {
+                text.push_str(buffer[(x, y)].symbol());
+            }
+        }
+        assert!(
+            text.contains("line 4") || text.contains("line 5"),
+            "Should show scrollback content, got: {text}"
         );
     }
 }

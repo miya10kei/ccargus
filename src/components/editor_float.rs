@@ -89,6 +89,7 @@ impl Component for EditorFloat {
                 vt_screen,
                 inner,
                 frame.buffer_mut(),
+                0,
             );
         }
     }
