@@ -28,7 +28,12 @@ impl WorktreeManager {
         Ok(Self { base_dir })
     }
 
-    pub fn add_worktree(&self, repo: &Repository, branch: &str) -> Result<WorktreeEntry> {
+    pub fn add_worktree(
+        &self,
+        repo: &Repository,
+        branch: &str,
+        base_branch: Option<&str>,
+    ) -> Result<WorktreeEntry> {
         let repo_dir = self.repo_dir(&repo.name);
         fs::create_dir_all(&repo_dir)?;
 
@@ -41,23 +46,28 @@ impl WorktreeManager {
         }
 
         let worktree_path_str = worktree_path.to_string_lossy().to_string();
-        let output = if branch_exists(&repo.path, branch)? {
+        if branch_exists(&repo.path, branch)? {
             // Existing branch: check it out in a new worktree
-            std::process::Command::new("git")
-                .args(["worktree", "add", &worktree_path_str, branch])
-                .current_dir(&repo.path)
-                .output()?
+            run_git(
+                &repo.path,
+                &["worktree", "add", &worktree_path_str, branch],
+                "git worktree add",
+            )?;
+        } else if let Some(base) = base_branch {
+            // New branch from specified base: update base first, then create
+            ensure_branch_up_to_date(&repo.path, base)?;
+            run_git(
+                &repo.path,
+                &["worktree", "add", "-b", branch, &worktree_path_str, base],
+                "git worktree add",
+            )?;
         } else {
-            // New branch: create with -b
-            std::process::Command::new("git")
-                .args(["worktree", "add", "-b", branch, &worktree_path_str])
-                .current_dir(&repo.path)
-                .output()?
-        };
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(eyre!("git worktree add failed: {stderr}"));
+            // New branch from HEAD
+            run_git(
+                &repo.path,
+                &["worktree", "add", "-b", branch, &worktree_path_str],
+                "git worktree add",
+            )?;
         }
 
         Ok(WorktreeEntry {
@@ -73,20 +83,12 @@ impl WorktreeManager {
     }
 
     pub fn remove_worktree(&self, entry: &WorktreeEntry) -> Result<()> {
-        let output = std::process::Command::new("git")
-            .args([
-                "worktree",
-                "remove",
-                "--force",
-                &entry.worktree_path.to_string_lossy(),
-            ])
-            .current_dir(&entry.source_repo_path)
-            .output()?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(eyre!("git worktree remove failed: {stderr}"));
-        }
+        let worktree_path_str = entry.worktree_path.to_string_lossy();
+        run_git(
+            &entry.source_repo_path,
+            &["worktree", "remove", "--force", &worktree_path_str],
+            "git worktree remove",
+        )?;
 
         // Clean up empty repo directory
         let repo_dir = self.repo_dir(&entry.repo_name);
@@ -171,12 +173,91 @@ impl WorktreeManager {
 }
 
 /// Check if a branch exists in the given repository (local or remote-tracking).
-fn branch_exists(repo_path: &str, branch: &str) -> Result<bool> {
+pub fn branch_exists(repo_path: &str, branch: &str) -> Result<bool> {
+    let stdout = git_stdout(
+        repo_path,
+        &["branch", "--list", "--all", branch, &format!("*/{branch}")],
+    )?;
+    Ok(!stdout.is_empty())
+}
+
+/// Ensure a local branch is up-to-date with its remote-tracking branch.
+/// If the branch has no configured remote, this is a no-op.
+pub fn ensure_branch_up_to_date(repo_path: &str, branch: &str) -> Result<()> {
+    let remote = git_stdout(
+        repo_path,
+        &["config", "--get", &format!("branch.{branch}.remote")],
+    )?;
+    if remote.is_empty() {
+        return Ok(());
+    }
+
+    run_git(repo_path, &["fetch", &remote, branch], "git fetch")?;
+
+    let behind: usize = git_stdout(
+        repo_path,
+        &[
+            "rev-list",
+            "--count",
+            &format!("{branch}..{remote}/{branch}"),
+        ],
+    )?
+    .parse()
+    .unwrap_or(0);
+    if behind == 0 {
+        return Ok(());
+    }
+
+    let target = git_stdout(repo_path, &["rev-parse", &format!("{remote}/{branch}")])?;
+    let current_branch = git_stdout(repo_path, &["symbolic-ref", "--short", "HEAD"])?;
+
+    if current_branch == branch {
+        run_git(
+            repo_path,
+            &["merge", "--ff-only", &format!("{remote}/{branch}")],
+            "git merge --ff-only",
+        )?;
+    } else {
+        run_git(
+            repo_path,
+            &["update-ref", &format!("refs/heads/{branch}"), &target],
+            "git update-ref",
+        )?;
+    }
+
+    Ok(())
+}
+
+pub fn list_local_branches(repo_path: &str) -> Result<Vec<String>> {
+    let stdout = git_stdout(
+        repo_path,
+        &["branch", "--list", "--format=%(refname:short)"],
+    )?;
+    let mut branches: Vec<String> = stdout.lines().map(ToString::to_string).collect();
+    branches.sort();
+    Ok(branches)
+}
+
+/// Run a git command and return its trimmed stdout. Does not check exit status.
+fn git_stdout(repo_path: &str, args: &[&str]) -> Result<String> {
     let output = std::process::Command::new("git")
-        .args(["branch", "--list", "--all", branch, &format!("*/{branch}")])
+        .args(args)
         .current_dir(repo_path)
         .output()?;
-    Ok(!String::from_utf8_lossy(&output.stdout).trim().is_empty())
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Run a git command and return an error if it fails.
+fn run_git(repo_path: &str, args: &[&str], context: &str) -> Result<()> {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(repo_path)
+        .output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(eyre!("{context} failed: {stderr}"));
+    }
+    Ok(())
 }
 
 #[allow(dead_code)]
@@ -463,7 +544,7 @@ mod tests {
             .output()
             .unwrap();
 
-        manager.add_worktree(&repo, "feat-test").unwrap();
+        manager.add_worktree(&repo, "feat-test", None).unwrap();
 
         let entries = manager.scan().unwrap();
         assert_eq!(entries.len(), 1);
@@ -489,7 +570,9 @@ mod tests {
             .output()
             .unwrap();
 
-        let entry = manager.add_worktree(&repo, "feat-add-remove").unwrap();
+        let entry = manager
+            .add_worktree(&repo, "feat-add-remove", None)
+            .unwrap();
         assert!(entry.worktree_path.exists());
         assert_eq!(entry.branch, "feat-add-remove");
 
@@ -515,8 +598,8 @@ mod tests {
             .output()
             .unwrap();
 
-        manager.add_worktree(&repo, "feat-dup").unwrap();
-        let result = manager.add_worktree(&repo, "feat-dup");
+        manager.add_worktree(&repo, "feat-dup", None).unwrap();
+        let result = manager.add_worktree(&repo, "feat-dup", None);
         assert!(result.is_err());
     }
 
@@ -541,7 +624,7 @@ mod tests {
         };
 
         // "feat-new" does not exist yet — should be created with -b
-        let entry = manager.add_worktree(&repo, "feat-new").unwrap();
+        let entry = manager.add_worktree(&repo, "feat-new", None).unwrap();
         assert!(entry.worktree_path.exists());
         assert_eq!(entry.branch, "feat-new");
 
