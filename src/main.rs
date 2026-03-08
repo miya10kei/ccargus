@@ -45,6 +45,8 @@ async fn main() -> Result<()> {
     let mut worktree_tree = WorktreeTree::new();
     let mut terminal_pane = TerminalPane::new();
 
+    let mut needs_render = true;
+
     while app.is_running() {
         let event = events.next().await?;
         match event {
@@ -60,11 +62,29 @@ async fn main() -> Result<()> {
                     &mut terminal_pane,
                     key,
                 );
+                needs_render = true;
             }
             event::Event::Mouse(mouse) => {
                 handle_mouse_event(&mut app, &mut editor_float, &mut terminal_pane, mouse);
+                needs_render = true;
             }
             event::Event::Render => {
+                let pty_dirty = app
+                    .worktree_pool
+                    .get(app.selected_worktree)
+                    .is_some_and(domain::worktree::Worktree::any_pty_dirty);
+                let editor_dirty = editor_float.visible && editor_float.is_dirty();
+
+                if !needs_render && !pty_dirty && !editor_dirty {
+                    continue;
+                }
+
+                if let Some(wt) = app.worktree_pool.get(app.selected_worktree) {
+                    wt.clear_pty_dirty();
+                }
+                editor_float.clear_dirty();
+                needs_render = false;
+
                 update_components(&app, &mut worktree_tree, &mut terminal_pane);
                 let status_line = build_status_line(&app);
 
@@ -88,6 +108,9 @@ async fn main() -> Result<()> {
                     confirm_dialog.render(frame, frame.area());
                     editor_float.render(frame, frame.area());
                 })?;
+            }
+            event::Event::Resize(_, _) => {
+                needs_render = true;
             }
             _ => {}
         }

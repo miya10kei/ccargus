@@ -23,12 +23,22 @@ impl EditorFloat {
         }
     }
 
+    pub fn clear_dirty(&self) {
+        if let Some(pty) = &self.pty {
+            pty.clear_dirty();
+        }
+    }
+
     pub fn close(&mut self) {
         if let Some(pty) = &mut self.pty {
             pty.kill();
         }
         self.pty = None;
         self.visible = false;
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.pty.as_ref().is_some_and(PtySession::is_dirty)
     }
 
     pub fn is_process_alive(&mut self) -> bool {
@@ -82,9 +92,9 @@ impl Component for EditorFloat {
         frame.render_widget(block, popup_area);
 
         if let Some(parser_arc) = self.screen()
-            && let Ok(parser) = parser_arc.lock()
+            && let Ok(mut parser) = parser_arc.lock()
         {
-            let vt_screen = parser.screen();
+            let vt_screen = parser.screen_mut();
             crate::components::terminal_pane::render_vt100_screen(
                 vt_screen,
                 inner,

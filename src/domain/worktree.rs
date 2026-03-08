@@ -306,6 +306,21 @@ pub struct Worktree {
 }
 
 impl Worktree {
+    pub fn any_pty_dirty(&self) -> bool {
+        let main_dirty = self.pty.as_ref().is_some_and(PtySession::is_dirty);
+        let qa_dirty = self.qa_pty.as_ref().is_some_and(PtySession::is_dirty);
+        main_dirty || qa_dirty
+    }
+
+    pub fn clear_pty_dirty(&self) {
+        if let Some(pty) = &self.pty {
+            pty.clear_dirty();
+        }
+        if let Some(qa) = &self.qa_pty {
+            qa.clear_dirty();
+        }
+    }
+
     pub fn display_name(&self) -> &str {
         self.repo.rsplit('/').next().unwrap_or(&self.repo)
     }
