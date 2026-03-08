@@ -13,6 +13,7 @@ use crate::keys::key_to_bytes;
 mod action;
 mod app;
 mod components;
+mod config;
 mod domain;
 mod event;
 mod keys;
