@@ -216,6 +216,10 @@ pub struct Worktree {
 }
 
 impl Worktree {
+    pub fn display_name(&self) -> &str {
+        self.repo.rsplit('/').next().unwrap_or(&self.repo)
+    }
+
     pub fn close_qa(&mut self) {
         if let Some(qa) = &mut self.qa_pty {
             qa.kill();
@@ -625,6 +629,22 @@ mod tests {
     fn get_out_of_bounds_returns_none() {
         let pool = WorktreePool::new();
         assert!(pool.get(99).is_none());
+    }
+
+    #[test]
+    fn display_name_returns_last_component() {
+        let mut pool = WorktreePool::new();
+        pool.add_stopped("github.com/owner/myrepo", "main", "/tmp");
+        let wt = pool.get(0).unwrap();
+        assert_eq!(wt.display_name(), "myrepo");
+    }
+
+    #[test]
+    fn display_name_without_slash() {
+        let mut pool = WorktreePool::new();
+        pool.add_stopped("myrepo", "main", "/tmp");
+        let wt = pool.get(0).unwrap();
+        assert_eq!(wt.display_name(), "myrepo");
     }
 
     #[test]
