@@ -12,6 +12,7 @@ use crate::components::status_line::StatusLine;
 use crate::components::terminal_pane::TerminalPane;
 use crate::components::worktree_tree::{WorktreeItem, WorktreeTree};
 use crate::config::Config;
+use crate::copy_mode::{CopyModeState, ScrollDirection};
 use crate::domain::worktree::WorktreeManager;
 use crate::keys::{key_to_bytes, mouse_to_bytes};
 
@@ -19,6 +20,7 @@ mod action;
 mod app;
 mod components;
 mod config;
+mod copy_mode;
 mod domain;
 mod event;
 mod keys;
@@ -86,7 +88,7 @@ async fn main() -> Result<()> {
                 needs_render = false;
 
                 update_components(&app, &mut worktree_tree, &mut terminal_pane);
-                let status_line = build_status_line(&app);
+                let status_line = build_status_line(&app, &terminal_pane);
 
                 tui.draw(|frame| {
                     let vertical = Layout::default()
@@ -253,22 +255,32 @@ fn update_components(
         .get(app.selected_worktree)
         .and_then(|wt| wt.qa_pty.as_ref().map(domain::pty::PtySession::screen));
 
-    // Reset scroll offset when the screen changes (e.g. worktree switch)
+    // Reset scroll/copy mode when the screen changes (e.g. worktree switch)
     if terminal_pane.screen.is_some() != new_screen.is_some() || new_screen.is_none() {
         terminal_pane.scroll_offset = 0;
+        terminal_pane.copy_mode = None;
     }
     if terminal_pane.qa_screen.is_some() != new_qa_screen.is_some() || new_qa_screen.is_none() {
         terminal_pane.qa_scroll_offset = 0;
+        terminal_pane.qa_copy_mode = None;
     }
 
     terminal_pane.screen = new_screen;
     terminal_pane.qa_screen = new_qa_screen;
 }
 
-fn build_status_line(app: &app::App) -> StatusLine {
+fn build_status_line(app: &app::App, terminal_pane: &TerminalPane) -> StatusLine {
+    let is_qa = app.focus == Focus::QaTerminal;
+    let copy_hint = if terminal_pane.is_in_copy_mode(is_qa) {
+        Some("COPY: v=select y=yank q=exit".to_owned())
+    } else {
+        None
+    };
+
     app.worktree_pool.get(app.selected_worktree).map_or_else(
         || StatusLine {
             branch: String::new(),
+            copy_hint: None,
             dir: String::new(),
             qa_mode: None,
             repo: String::new(),
@@ -287,6 +299,7 @@ fn build_status_line(app: &app::App) -> StatusLine {
             };
             StatusLine {
                 branch: wt.branch.clone(),
+                copy_hint,
                 dir: wt.working_dir(),
                 qa_mode,
                 repo: wt.display_name().to_string(),
@@ -413,6 +426,13 @@ fn handle_scroll_key(
         KeyCode::PageDown => {
             terminal_pane.scroll_down(qa, terminal_half_page_size() * 2);
         }
+        KeyCode::Char('v') => {
+            let (_cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+            // Approximate viewport: terminal height minus borders and status line
+            let viewport_rows = usize::from(rows).saturating_sub(4);
+            let viewport_cols = 80; // Will be refined by actual render area
+            terminal_pane.enter_copy_mode(qa, viewport_rows, viewport_cols);
+        }
         KeyCode::Esc | KeyCode::Char('q') => {
             terminal_pane.exit_scroll(qa);
         }
@@ -424,11 +444,136 @@ fn handle_scroll_key(
     true
 }
 
+/// Returns true if the key was handled as a copy mode action.
+#[allow(clippy::too_many_lines)]
+fn handle_copy_mode_key(
+    app: &app::App,
+    terminal_pane: &mut TerminalPane,
+    key: crossterm::event::KeyEvent,
+    qa: bool,
+) -> bool {
+    if !terminal_pane.is_in_copy_mode(qa) {
+        return false;
+    }
+
+    // Clone the screen Arc to avoid borrow conflicts with terminal_pane
+    let screen_arc = if qa {
+        terminal_pane.qa_screen.clone()
+    } else {
+        terminal_pane.screen.clone()
+    };
+
+    match key.code {
+        KeyCode::Char('h') | KeyCode::Left => {
+            if let Some(cm) = terminal_pane.copy_mode_mut(qa) {
+                cm.move_left();
+            }
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            let scroll_dir = terminal_pane
+                .copy_mode_mut(qa)
+                .and_then(CopyModeState::move_down);
+            if let Some(ScrollDirection::Down) = scroll_dir {
+                terminal_pane.scroll_down(qa, 1);
+            }
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            let scroll_dir = terminal_pane
+                .copy_mode_mut(qa)
+                .and_then(CopyModeState::move_up);
+            if let Some(ScrollDirection::Up) = scroll_dir {
+                let max = scrollback_max(app, qa);
+                terminal_pane.scroll_up(qa, 1, max);
+            }
+        }
+        KeyCode::Char('l') | KeyCode::Right => {
+            if let Some(cm) = terminal_pane.copy_mode_mut(qa) {
+                cm.move_right();
+            }
+        }
+        KeyCode::Char('w') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            let scroll_offset = terminal_pane.scroll_offset_for(qa);
+            if let Some(parser_arc) = &screen_arc
+                && let Ok(parser) = parser_arc.lock()
+                && let Some(cm) = terminal_pane.copy_mode_mut(qa)
+            {
+                cm.move_word_forward(parser.screen(), scroll_offset);
+            }
+        }
+        KeyCode::Char('b') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            let scroll_offset = terminal_pane.scroll_offset_for(qa);
+            if let Some(parser_arc) = &screen_arc
+                && let Ok(parser) = parser_arc.lock()
+                && let Some(cm) = terminal_pane.copy_mode_mut(qa)
+            {
+                cm.move_word_backward(parser.screen(), scroll_offset);
+            }
+        }
+        KeyCode::Char('^') => {
+            if let Some(cm) = terminal_pane.copy_mode_mut(qa) {
+                cm.move_line_start();
+            }
+        }
+        KeyCode::Char('$') => {
+            if let Some(cm) = terminal_pane.copy_mode_mut(qa) {
+                cm.move_line_end();
+            }
+        }
+        KeyCode::Char('g') => {
+            if let Some(cm) = terminal_pane.copy_mode_mut(qa) {
+                cm.move_top();
+            }
+        }
+        KeyCode::Char('G') => {
+            if let Some(cm) = terminal_pane.copy_mode_mut(qa) {
+                cm.move_bottom();
+            }
+        }
+        KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            let max = scrollback_max(app, qa);
+            terminal_pane.scroll_up(qa, terminal_half_page_size(), max);
+        }
+        KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            terminal_pane.scroll_down(qa, terminal_half_page_size());
+        }
+        KeyCode::Char('v' | ' ') => {
+            if let Some(cm) = terminal_pane.copy_mode_mut(qa) {
+                cm.toggle_selection();
+            }
+        }
+        KeyCode::Char('y') | KeyCode::Enter => {
+            let scroll_offset = terminal_pane.scroll_offset_for(qa);
+            let text = screen_arc.as_ref().and_then(|parser_arc| {
+                parser_arc.lock().ok().and_then(|parser| {
+                    terminal_pane
+                        .copy_mode_for(qa)
+                        .map(|cm| cm.extract_text(parser.screen(), scroll_offset))
+                })
+            });
+            if let Some(text) = text
+                && !text.is_empty()
+            {
+                let _ = CopyModeState::copy_to_clipboard(&text);
+            }
+            terminal_pane.exit_copy_mode(qa);
+        }
+        KeyCode::Esc | KeyCode::Char('q') => {
+            terminal_pane.exit_copy_mode(qa);
+        }
+        _ => {}
+    }
+    true
+}
+
 fn handle_qa_terminal_key(
     app: &mut app::App,
     terminal_pane: &mut TerminalPane,
     key: crossterm::event::KeyEvent,
 ) {
+    if handle_copy_mode_key(app, terminal_pane, key, true) {
+        return;
+    }
+
     if handle_scroll_key(app, terminal_pane, key, true) {
         return;
     }
@@ -549,6 +694,10 @@ fn handle_terminal_key(
     terminal_pane: &mut TerminalPane,
     key: crossterm::event::KeyEvent,
 ) {
+    if handle_copy_mode_key(app, terminal_pane, key, false) {
+        return;
+    }
+
     if handle_scroll_key(app, terminal_pane, key, false) {
         return;
     }

@@ -100,6 +100,7 @@ impl Component for EditorFloat {
                 inner,
                 frame.buffer_mut(),
                 0,
+                None,
             );
         }
     }
