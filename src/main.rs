@@ -466,7 +466,7 @@ fn handle_worktrees_key(
             app.select_next_worktree(app.worktree_pool.len());
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            app.select_prev_worktree();
+            app.select_prev_worktree(app.worktree_pool.len());
         }
         KeyCode::Char('n') => {
             repo_selector.open();
