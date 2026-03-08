@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use color_eyre::Result;
-use crossterm::event::{EventStream, KeyEvent};
+use crossterm::event::{EventStream, KeyEvent, MouseEvent};
 use futures::StreamExt;
 use tokio::sync::mpsc;
 
@@ -10,6 +10,7 @@ use tokio::sync::mpsc;
 pub enum Event {
     Error,
     Key(KeyEvent),
+    Mouse(MouseEvent),
     Render,
     Resize(u16, u16),
     Tick,
@@ -38,6 +39,7 @@ impl EventHandler {
                     _ = render_timer.tick() => Event::Render,
                     event = reader.next() => match event {
                         Some(Ok(crossterm::event::Event::Key(key))) => Event::Key(key),
+                        Some(Ok(crossterm::event::Event::Mouse(mouse))) => Event::Mouse(mouse),
                         Some(Ok(crossterm::event::Event::Resize(cols, rows))) => Event::Resize(cols, rows),
                         Some(Err(_)) => Event::Error,
                         _ => continue,
