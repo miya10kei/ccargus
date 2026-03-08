@@ -358,6 +358,15 @@ impl Worktree {
         self.qa_pty.is_some()
     }
 
+    pub fn resize_pty(&self, main_rows: u16, main_cols: u16, qa_rows: u16, qa_cols: u16) {
+        if let Some(pty) = &self.pty {
+            let _ = pty.resize(main_rows, main_cols);
+        }
+        if let Some(qa) = &self.qa_pty {
+            let _ = qa.resize(qa_rows, qa_cols);
+        }
+    }
+
     pub fn is_running(&self) -> bool {
         self.pty.is_some()
     }
@@ -420,6 +429,10 @@ impl WorktreePool {
 
     pub fn all(&self) -> &[Worktree] {
         &self.worktrees
+    }
+
+    pub fn all_mut(&mut self) -> &mut [Worktree] {
+        &mut self.worktrees
     }
 
     pub fn get(&self, index: usize) -> Option<&Worktree> {
