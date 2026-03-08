@@ -7,24 +7,24 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 
 use crate::components::Component;
 
-pub struct SessionEntry {
+pub struct WorktreeItem {
     pub branch: String,
     pub repo: String,
     pub running: bool,
 }
 
-pub struct SessionTree {
+pub struct WorktreeTree {
     pub focused: bool,
     pub selected: usize,
-    pub sessions: Vec<SessionEntry>,
+    pub worktrees: Vec<WorktreeItem>,
 }
 
-impl SessionTree {
+impl WorktreeTree {
     pub fn new() -> Self {
         Self {
             focused: true,
             selected: 0,
-            sessions: Vec::new(),
+            worktrees: Vec::new(),
         }
     }
 
@@ -37,11 +37,11 @@ impl SessionTree {
     }
 
     fn build_tree_items(&self) -> Vec<ListItem<'static>> {
-        if self.sessions.is_empty() {
-            return vec![ListItem::new("  (no sessions)")];
+        if self.worktrees.is_empty() {
+            return vec![ListItem::new("  (no worktrees)")];
         }
 
-        let groups = group_by_repo(&self.sessions);
+        let groups = group_by_repo(&self.worktrees);
         let mut items = Vec::new();
         let mut flat_index = 0usize;
 
@@ -68,11 +68,11 @@ impl SessionTree {
     }
 
     fn selected_list_index(&self) -> Option<usize> {
-        if self.sessions.is_empty() {
+        if self.worktrees.is_empty() {
             return None;
         }
 
-        let groups = group_by_repo(&self.sessions);
+        let groups = group_by_repo(&self.worktrees);
         let mut list_index = 0usize;
         let mut flat_index = 0usize;
 
@@ -91,19 +91,19 @@ impl SessionTree {
     }
 }
 
-pub fn group_by_repo(sessions: &[SessionEntry]) -> Vec<(String, Vec<&SessionEntry>)> {
-    if sessions.is_empty() {
+pub fn group_by_repo(worktrees: &[WorktreeItem]) -> Vec<(String, Vec<&WorktreeItem>)> {
+    if worktrees.is_empty() {
         return Vec::new();
     }
 
     let mut order: Vec<String> = Vec::new();
-    let mut map: BTreeMap<&str, Vec<&SessionEntry>> = BTreeMap::new();
+    let mut map: BTreeMap<&str, Vec<&WorktreeItem>> = BTreeMap::new();
 
-    for session in sessions {
-        if !map.contains_key(session.repo.as_str()) {
-            order.push(session.repo.clone());
+    for wt in worktrees {
+        if !map.contains_key(wt.repo.as_str()) {
+            order.push(wt.repo.clone());
         }
-        map.entry(&session.repo).or_default().push(session);
+        map.entry(&wt.repo).or_default().push(wt);
     }
 
     order
@@ -112,12 +112,12 @@ pub fn group_by_repo(sessions: &[SessionEntry]) -> Vec<(String, Vec<&SessionEntr
         .collect()
 }
 
-impl Component for SessionTree {
+impl Component for WorktreeTree {
     fn render(&self, frame: &mut Frame, area: Rect) {
         let items = self.build_tree_items();
 
         let block = Block::default()
-            .title(" Sessions ")
+            .title(" Worktrees ")
             .borders(Borders::ALL)
             .border_style(Style::default().fg(self.border_color()));
 
@@ -140,8 +140,8 @@ mod tests {
 
     use super::*;
 
-    fn make_entry(_name: &str, repo: &str, branch: &str) -> SessionEntry {
-        SessionEntry {
+    fn make_entry(_name: &str, repo: &str, branch: &str) -> WorktreeItem {
+        WorktreeItem {
             branch: branch.to_owned(),
             repo: repo.to_owned(),
             running: true,
@@ -199,10 +199,10 @@ mod tests {
     fn renders_with_border_color_when_focused() {
         let backend = TestBackend::new(40, 10);
         let mut terminal = Terminal::new(backend).unwrap();
-        let tree = SessionTree {
+        let tree = WorktreeTree {
             focused: true,
             selected: 0,
-            sessions: Vec::new(),
+            worktrees: Vec::new(),
         };
 
         terminal
@@ -220,10 +220,10 @@ mod tests {
     fn renders_with_border_color_when_unfocused() {
         let backend = TestBackend::new(40, 10);
         let mut terminal = Terminal::new(backend).unwrap();
-        let tree = SessionTree {
+        let tree = WorktreeTree {
             focused: false,
             selected: 0,
-            sessions: Vec::new(),
+            worktrees: Vec::new(),
         };
 
         terminal
@@ -238,10 +238,10 @@ mod tests {
     }
 
     #[test]
-    fn renders_with_sessions_title() {
+    fn renders_with_worktrees_title() {
         let backend = TestBackend::new(40, 10);
         let mut terminal = Terminal::new(backend).unwrap();
-        let tree = SessionTree::new();
+        let tree = WorktreeTree::new();
 
         terminal
             .draw(|frame| {
@@ -254,16 +254,16 @@ mod tests {
             .map(|x| buffer[(x, 0)].symbol().to_string())
             .collect::<String>();
         assert!(
-            text.contains(" Sessions "),
-            "Title should contain ' Sessions ', got: {text}"
+            text.contains(" Worktrees "),
+            "Title should contain ' Worktrees ', got: {text}"
         );
     }
 
     #[test]
-    fn renders_no_sessions_when_empty() {
+    fn renders_no_worktrees_when_empty() {
         let backend = TestBackend::new(40, 10);
         let mut terminal = Terminal::new(backend).unwrap();
-        let tree = SessionTree::new();
+        let tree = WorktreeTree::new();
 
         terminal
             .draw(|frame| {
@@ -276,19 +276,19 @@ mod tests {
             .map(|x| buffer[(x, 1)].symbol().to_string())
             .collect::<String>();
         assert!(
-            text.contains("(no sessions)"),
-            "Should show '(no sessions)' when empty, got: {text}"
+            text.contains("(no worktrees)"),
+            "Should show '(no worktrees)' when empty, got: {text}"
         );
     }
 
     #[test]
-    fn renders_tree_with_sessions() {
+    fn renders_tree_with_worktrees() {
         let backend = TestBackend::new(40, 10);
         let mut terminal = Terminal::new(backend).unwrap();
-        let tree = SessionTree {
+        let tree = WorktreeTree {
             focused: true,
             selected: 0,
-            sessions: vec![
+            worktrees: vec![
                 make_entry("s1", "my/repo", "main"),
                 make_entry("s2", "my/repo", "dev"),
             ],

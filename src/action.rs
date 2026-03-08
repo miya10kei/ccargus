@@ -2,17 +2,17 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     CreateWorktree,
-    DeleteSession,
+    DeleteWorktree,
     FocusNext,
     None,
     Quit,
     Render,
     Resize(u16, u16),
-    SelectNextSession,
-    SelectPrevSession,
+    SelectNextWorktree,
+    SelectPrevWorktree,
     SendBytes(Vec<u8>),
-    StartSession,
-    StopSession,
+    StartWorktree,
+    StopWorktree,
     Tick,
 }
 
@@ -28,9 +28,9 @@ mod tests {
         assert_eq!(Action::None, Action::None);
         assert_eq!(Action::FocusNext, Action::FocusNext);
         assert_eq!(Action::CreateWorktree, Action::CreateWorktree);
-        assert_eq!(Action::DeleteSession, Action::DeleteSession);
-        assert_eq!(Action::SelectNextSession, Action::SelectNextSession);
-        assert_eq!(Action::SelectPrevSession, Action::SelectPrevSession);
+        assert_eq!(Action::DeleteWorktree, Action::DeleteWorktree);
+        assert_eq!(Action::SelectNextWorktree, Action::SelectNextWorktree);
+        assert_eq!(Action::SelectPrevWorktree, Action::SelectPrevWorktree);
     }
 
     #[test]

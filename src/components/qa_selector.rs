@@ -82,8 +82,8 @@ impl Component for QaSelector {
         frame.render_widget(Clear, popup_area);
 
         let items = vec![
-            ListItem::new("  Fork  - Continue current session context"),
-            ListItem::new("  New   - Start fresh Q&A session"),
+            ListItem::new("  Fork  - Continue current context"),
+            ListItem::new("  New   - Start fresh Q&A"),
         ];
 
         let list = List::new(items)

@@ -2,8 +2,8 @@
 
 ## Overview
 
-Claude Codeの複数セッションを一元管理するTUIツール。
-lazygit風のマルチペインレイアウトで、セッション一覧・Claude Codeとのフルインタラクション・エディタでのコード確認を統合する。
+Claude Codeの複数worktreeセッションを一元管理するTUIツール。
+lazygit風のマルチペインレイアウトで、worktree一覧・Claude Codeとのフルインタラクション・エディタでのコード確認を統合する。
 
 ## Tech Stack
 
@@ -15,14 +15,14 @@ lazygit風のマルチペインレイアウトで、セッション一覧・Clau
 ## Layout
 
 ```
-┌ Sessions ──────────────┐┌ Claude Code ─────────────────────┐
+┌ Worktrees ─────────────┐┌ Claude Code ─────────────────────┐
 │ ▼ miya10kei/ccargus    ││ > Analyzing code...              │
 │   ▶ main               ││ > Found 3 issues                 │
 │     feat/qa            ││ > Fixing issue #1...             │
 │ ▼ miya10kei/api-server ││                                  │
 │     main               ││ ┌──── vim (~/proj) ────────────┐ │
 │ ▶ miya10kei/other-proj ││ │ src/main.rs                  │ │
-│   (no sessions)        ││ │ fn main() {                  │ │
+│   (no worktrees)       ││ │ fn main() {                  │ │
 │                        ││ │   ...          [Esc: close]  │ │
 │                        ││ └──────────────────────────────┘ │
 │                        ││                                  │
@@ -30,54 +30,54 @@ lazygit風のマルチペインレイアウトで、セッション一覧・Clau
  ccargus │ main │ ~/dev/.../ccargus │ PID: 12345 │ Running 5m
 ```
 
-- **左**: セッション一覧（リポジトリ > worktree の階層ツリー表示）
+- **左**: worktree一覧（リポジトリ > worktree の階層ツリー表示）
 - **右**: Claude Codeのフルインタラクティブターミナル（PTY埋め込み）
-- **下部ステータスライン**: 選択中セッションの詳細情報（リポジトリ、ブランチ、ディレクトリ、PID、ステータス）
-- **フローティングウィンドウ**: セッションの作業ディレクトリでエディタを起動
+- **下部ステータスライン**: 選択中worktreeの詳細情報（リポジトリ、ブランチ、ディレクトリ、PID、ステータス）
+- **フローティングウィンドウ**: worktreeの作業ディレクトリでエディタを起動
 
 ## Features
 
-### Session Management
+### Worktree Management
 
 | 機能 | キー | 説明 |
 |------|------|------|
-| セッション選択 | `j/k` or `↑/↓` | セッション一覧を移動 |
+| worktree選択 | `j/k` or `↑/↓` | worktree一覧を移動 |
 | ツリー開閉 | `Enter` or `l/h` | リポジトリノードの展開・折りたたみ |
-| 新規セッション | `n` | リポジトリ選択 → worktree選択 → セッション起動 |
-| セッション削除 | `d` | セッションを停止・削除 |
+| 新規worktree | `n` | リポジトリ選択 → worktree選択 → 起動 |
+| worktree削除 | `d` | worktreeを停止・削除 |
 | エディタ起動 | `e` | フローティングウィンドウでエディタ起動 |
 | フォーカス切替 | `Tab` | 左ペイン ↔ 右ペイン（Claude Code操作） |
-| 終了 | `q` | ccargus終了（セッションは継続可能） |
+| 終了 | `q` | ccargus終了 |
 
-### New Session Flow
+### New Worktree Flow
 
-新規セッション作成は以下の3ステップ:
+新規worktree作成は以下の3ステップ:
 
 1. **リポジトリ選択**: `ghq list` + `fzf` でclone済みリポジトリを選択
 2. **worktree選択**: 選択リポジトリのworktree一覧を表示し選択（新規worktree作成も可能）
-3. **セッション起動**: 選択worktreeのディレクトリで`claude`を起動
+3. **起動**: 選択worktreeのディレクトリで`claude`を起動
 
-### Session Lifecycle
+### Worktree Lifecycle
 
-- ccargusが起動した新規セッション + 既存の`claude`プロセスも検出・取り込み
-- 各セッションはPTYを通じて管理、出力をキャプチャしてメインペインにレンダリング
-- セッション情報（PID、作業ディレクトリ、ステータス）をリアルタイム更新
+- ccargusが起動した新規worktree + 既存の`claude`プロセスも検出・取り込み
+- 各worktreeはPTYを通じて管理、出力をキャプチャしてメインペインにレンダリング
+- worktree情報（PID、作業ディレクトリ、ステータス）をリアルタイム更新
 
 ### Q&A Sub-Session
 
-メインセッションの作業を中断せずに、コードについて質問したり設計相談ができるサブセッション機能。
+メインworktreeの作業を中断せずに、コードについて質問したり設計相談ができるサブセッション機能。
 
-**起動方法**: セッション選択中に `s` キーで起動モードを選択
+**起動方法**: worktree選択中に `s` キーで起動モードを選択
 
 | モード | 説明 |
 |--------|------|
-| Fork | メインセッションのコンテキストを `--fork-session` で引き継いでQ&Aセッションを起動。作業中のコードや背景を理解した状態で回答が得られる |
-| New | 同じ作業ディレクトリで新規セッションを起動。まっさらな状態で質問したい場合に使用 |
+| Fork | メインのコンテキストを `--fork-session` で引き継いでQ&Aを起動。作業中のコードや背景を理解した状態で回答が得られる |
+| New | 同じ作業ディレクトリで新規Q&Aを起動。まっさらな状態で質問したい場合に使用 |
 
-**レイアウト**: 右ペインをさらに左右分割し、左がメインセッション、右がQ&Aサブセッション
+**レイアウト**: 右ペインをさらに左右分割し、左がメイン、右がQ&A
 
 ```
-┌ Sessions ──────────────┐┌ main ──────────────┐┌ Q&A ──────────────┐
+┌ Worktrees ─────────────┐┌ main ──────────────┐┌ Q&A ──────────────┐
 │ ▼ miya10kei/ccargus    ││ > Fixing issue #1...││ Q: この関数の意図は？│
 │   ▶ main               ││ > Done.            ││ A: これは...       │
 │     feat/qa            ││                    ││                    │
@@ -90,11 +90,11 @@ lazygit風のマルチペインレイアウトで、セッション一覧・Clau
 ```
 
 - メイン・Q&A間のフォーカス切替は `Ctrl+w` で行う
-- Q&Aセッションの終了は `Ctrl+d` またはQ&Aペイン内で `/exit`
+- Q&Aの終了は `Ctrl+d` またはQ&Aペイン内で `/exit`
 
 ### Floating Editor
 
-- セッションの作業ディレクトリでエディタ（設定可能）をフローティングウィンドウとして起動
+- worktreeの作業ディレクトリでエディタ（設定可能）をフローティングウィンドウとして起動
 - Claude Codeの出力を確認しながらコードを編集するワークフローを実現
 
 ## Config
@@ -106,8 +106,8 @@ lazygit風のマルチペインレイアウトで、セッション一覧・Clau
 command = "vim"
 
 [keybindings]
-new_session = "n"
-delete_session = "d"
+new_worktree = "n"
+delete_worktree = "d"
 open_editor = "e"
 ```
 
@@ -138,13 +138,13 @@ src/
 
   components/           - UIコンポーネント（Component trait実装）
     mod.rs              - Component trait定義
-    session_tree.rs     - 左ペイン: セッション一覧ツリー
+    worktree_tree.rs    - 左ペイン: worktree一覧ツリー
     terminal_pane.rs    - 右ペイン: PTY出力レンダリング
     status_line.rs      - 下部ステータスライン
 
   domain/               - ドメインロジック（UI非依存）
     mod.rs
-    session.rs          - SessionManager: セッションライフサイクル管理
+    worktree.rs         - WorktreePool: worktreeライフサイクル管理
     pty.rs              - PtySession: PTY生成・I/O・vt100パース
 ```
 
