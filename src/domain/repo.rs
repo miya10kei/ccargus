@@ -7,13 +7,6 @@ pub struct Repository {
     pub name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Worktree {
-    pub path: String,
-    pub branch: String,
-    pub is_main: bool,
-}
-
 /// Filter repositories by query string (case-insensitive substring match).
 pub fn filter_repositories<'a>(repos: &'a [Repository], query: &str) -> Vec<&'a Repository> {
     if query.is_empty() {
@@ -52,23 +45,6 @@ pub fn list_repositories() -> Result<Vec<Repository>> {
     Ok(repos)
 }
 
-/// List worktrees for a given repository.
-/// Runs `git worktree list --porcelain` in the repo directory and parses output.
-pub fn list_worktrees(repo_path: &str) -> Result<Vec<Worktree>> {
-    let output = std::process::Command::new("git")
-        .args(["worktree", "list", "--porcelain"])
-        .current_dir(repo_path)
-        .output()?;
-
-    if !output.status.success() {
-        return Err(eyre!("git worktree list failed"));
-    }
-
-    Ok(parse_worktree_output(&String::from_utf8_lossy(
-        &output.stdout,
-    )))
-}
-
 /// Extract repository display name from full path.
 /// Looks for patterns like "github.com/owner/repo" in the path.
 /// Falls back to the last 2 path components.
@@ -80,52 +56,6 @@ fn extract_repo_name(path: &str) -> String {
     }
     let parts: Vec<&str> = path.rsplit('/').take(2).collect();
     parts.into_iter().rev().collect::<Vec<_>>().join("/")
-}
-
-/// Parse `git worktree list --porcelain` output.
-///
-/// Format:
-/// ```text
-/// worktree /path/to/worktree
-/// HEAD abc123
-/// branch refs/heads/main
-///
-/// worktree /path/to/linked
-/// HEAD def456
-/// branch refs/heads/feature
-/// ```
-fn parse_worktree_output(output: &str) -> Vec<Worktree> {
-    let mut worktrees = Vec::new();
-    let mut current_path = String::new();
-    let mut current_branch = String::new();
-    let mut is_first = true;
-
-    for line in output.lines() {
-        if let Some(path) = line.strip_prefix("worktree ") {
-            if !current_path.is_empty() {
-                worktrees.push(Worktree {
-                    path: current_path.clone(),
-                    branch: current_branch.clone(),
-                    is_main: is_first,
-                });
-                is_first = false;
-            }
-            current_path = path.to_string();
-            current_branch = String::new();
-        } else if let Some(branch) = line.strip_prefix("branch refs/heads/") {
-            current_branch = branch.to_string();
-        }
-    }
-
-    if !current_path.is_empty() {
-        worktrees.push(Worktree {
-            path: current_path,
-            branch: current_branch,
-            is_main: is_first,
-        });
-    }
-
-    worktrees
 }
 
 #[cfg(test)]
@@ -207,39 +137,5 @@ mod tests {
         }];
         let filtered = filter_repositories(&repos, "xyz");
         assert!(filtered.is_empty());
-    }
-
-    #[test]
-    fn parse_worktree_empty() {
-        let worktrees = parse_worktree_output("");
-        assert!(worktrees.is_empty());
-    }
-
-    #[test]
-    fn parse_worktree_multiple() {
-        let output = "\
-worktree /path/to/repo
-HEAD abc
-branch refs/heads/main
-
-worktree /path/to/repo-feat
-HEAD def
-branch refs/heads/feat
-";
-        let worktrees = parse_worktree_output(output);
-        assert_eq!(worktrees.len(), 2);
-        assert!(worktrees[0].is_main);
-        assert!(!worktrees[1].is_main);
-        assert_eq!(worktrees[1].branch, "feat");
-    }
-
-    #[test]
-    fn parse_worktree_single() {
-        let output = "worktree /path/to/repo\nHEAD abc123\nbranch refs/heads/main\n\n";
-        let worktrees = parse_worktree_output(output);
-        assert_eq!(worktrees.len(), 1);
-        assert_eq!(worktrees[0].path, "/path/to/repo");
-        assert_eq!(worktrees[0].branch, "main");
-        assert!(worktrees[0].is_main);
     }
 }

@@ -18,6 +18,12 @@ fn default_open_editor() -> char {
 fn default_qa_session() -> char {
     's'
 }
+fn default_worktree_base_dir() -> PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
+        .join("ccargus")
+        .join("worktrees")
+}
 
 #[allow(dead_code)]
 #[derive(Debug, Default, Deserialize)]
@@ -26,6 +32,8 @@ pub struct Config {
     pub editor: EditorConfig,
     #[serde(default)]
     pub keybindings: KeybindingsConfig,
+    #[serde(default)]
+    pub worktree: WorktreeConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,6 +74,21 @@ impl Default for KeybindingsConfig {
     }
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct WorktreeConfig {
+    #[serde(default = "default_worktree_base_dir")]
+    pub base_dir: PathBuf,
+}
+
+impl Default for WorktreeConfig {
+    fn default() -> Self {
+        Self {
+            base_dir: default_worktree_base_dir(),
+        }
+    }
+}
+
 impl Config {
     pub fn config_path() -> PathBuf {
         dirs::config_dir()
@@ -101,6 +124,7 @@ mod tests {
         assert_eq!(config.keybindings.delete_session, 'd');
         assert_eq!(config.keybindings.open_editor, 'e');
         assert_eq!(config.keybindings.qa_session, 's');
+        assert!(config.worktree.base_dir.ends_with("ccargus/worktrees"));
     }
 
     #[test]
@@ -114,6 +138,9 @@ new_session = "a"
 delete_session = "x"
 open_editor = "o"
 qa_session = "q"
+
+[worktree]
+base_dir = "/custom/worktrees"
 "#;
         let config = Config::from_toml(toml).unwrap();
         assert_eq!(config.editor.command, "nvim");
@@ -121,6 +148,7 @@ qa_session = "q"
         assert_eq!(config.keybindings.delete_session, 'x');
         assert_eq!(config.keybindings.open_editor, 'o');
         assert_eq!(config.keybindings.qa_session, 'q');
+        assert_eq!(config.worktree.base_dir, PathBuf::from("/custom/worktrees"));
     }
 
     #[test]
@@ -135,6 +163,7 @@ command = "emacs"
         assert_eq!(config.keybindings.delete_session, 'd');
         assert_eq!(config.keybindings.open_editor, 'e');
         assert_eq!(config.keybindings.qa_session, 's');
+        assert!(config.worktree.base_dir.ends_with("ccargus/worktrees"));
     }
 
     #[test]
@@ -142,6 +171,7 @@ command = "emacs"
         let config = Config::from_toml("").unwrap();
         assert_eq!(config.editor.command, "vim");
         assert_eq!(config.keybindings.new_session, 'n');
+        assert!(config.worktree.base_dir.ends_with("ccargus/worktrees"));
     }
 
     #[test]

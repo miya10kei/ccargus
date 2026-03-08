@@ -6,38 +6,35 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragra
 
 use crate::action::Action;
 use crate::components::Component;
-use crate::domain::repo::{
-    Repository, Worktree, filter_repositories, list_repositories, list_worktrees,
-};
+use crate::domain::repo::{Repository, filter_repositories, list_repositories};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectorStep {
+    InputBranchName,
     SelectRepo,
-    SelectWorktree,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectionResult {
     pub branch: String,
-    pub repo_name: String,
-    pub working_dir: String,
+    pub repo: Repository,
 }
 
 pub struct RepoSelector {
     pub result: Option<SelectionResult>,
     pub visible: bool,
+    branch_input: String,
     filter_query: String,
     repo_list_state: ListState,
     repositories: Vec<Repository>,
     selected_repo: Option<Repository>,
     step: SelectorStep,
-    worktree_list_state: ListState,
-    worktrees: Vec<Worktree>,
 }
 
 impl RepoSelector {
     pub fn new() -> Self {
         Self {
+            branch_input: String::new(),
             filter_query: String::new(),
             repo_list_state: ListState::default(),
             repositories: Vec::new(),
@@ -45,8 +42,6 @@ impl RepoSelector {
             selected_repo: None,
             step: SelectorStep::SelectRepo,
             visible: false,
-            worktree_list_state: ListState::default(),
-            worktrees: Vec::new(),
         }
     }
 
@@ -57,10 +52,10 @@ impl RepoSelector {
     pub fn open(&mut self) {
         self.visible = true;
         self.step = SelectorStep::SelectRepo;
+        self.branch_input.clear();
         self.filter_query.clear();
         self.result = None;
         self.selected_repo = None;
-        self.worktrees.clear();
 
         match list_repositories() {
             Ok(repos) => {
@@ -77,32 +72,66 @@ impl RepoSelector {
         self.result.take()
     }
 
+    fn confirm_branch(&mut self) {
+        let branch = self.branch_input.trim().to_string();
+        if branch.is_empty() {
+            return;
+        }
+        if let Some(repo) = &self.selected_repo {
+            self.result = Some(SelectionResult {
+                branch,
+                repo: repo.clone(),
+            });
+            self.visible = false;
+        }
+    }
+
     fn filtered_repos(&self) -> Vec<&Repository> {
         filter_repositories(&self.repositories, &self.filter_query)
     }
 
     fn move_down(&mut self) {
-        let max = match self.step {
-            SelectorStep::SelectRepo => self.filtered_repos().len(),
-            SelectorStep::SelectWorktree => self.worktrees.len(),
-        };
-        let state = match self.step {
-            SelectorStep::SelectRepo => &mut self.repo_list_state,
-            SelectorStep::SelectWorktree => &mut self.worktree_list_state,
-        };
-        let current = state.selected().unwrap_or(0);
+        if self.step != SelectorStep::SelectRepo {
+            return;
+        }
+        let max = self.filtered_repos().len();
+        let current = self.repo_list_state.selected().unwrap_or(0);
         if max > 0 {
-            state.select(Some((current + 1).min(max - 1)));
+            self.repo_list_state
+                .select(Some((current + 1).min(max - 1)));
         }
     }
 
     fn move_up(&mut self) {
-        let state = match self.step {
-            SelectorStep::SelectRepo => &mut self.repo_list_state,
-            SelectorStep::SelectWorktree => &mut self.worktree_list_state,
-        };
-        let current = state.selected().unwrap_or(0);
-        state.select(Some(current.saturating_sub(1)));
+        if self.step != SelectorStep::SelectRepo {
+            return;
+        }
+        let current = self.repo_list_state.selected().unwrap_or(0);
+        self.repo_list_state.select(Some(current.saturating_sub(1)));
+    }
+
+    fn render_branch_input(&self, frame: &mut Frame, area: Rect) {
+        let repo_name = self.selected_repo.as_ref().map_or("", |r| &r.name);
+
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(1)])
+            .split(area);
+
+        let input = Paragraph::new(format!("  {}", self.branch_input)).block(
+            Block::default()
+                .title(format!(" New Branch: {repo_name} "))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        );
+        frame.render_widget(input, layout[0]);
+
+        let help = Paragraph::new("  Enter: create  |  Esc: back").block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+        frame.render_widget(help, layout[1]);
     }
 
     fn render_repo_list(&self, frame: &mut Frame, area: Rect) {
@@ -138,69 +167,15 @@ impl RepoSelector {
         frame.render_stateful_widget(list, layout[1], &mut state);
     }
 
-    fn render_worktree_list(&self, frame: &mut Frame, area: Rect) {
-        let repo_name = self.selected_repo.as_ref().map_or("", |r| &r.name);
-
-        let items: Vec<ListItem> = self
-            .worktrees
-            .iter()
-            .map(|wt| {
-                let prefix = if wt.is_main { "● " } else { "  " };
-                let branch = if wt.branch.is_empty() {
-                    "(detached)"
-                } else {
-                    &wt.branch
-                };
-                ListItem::new(format!("{prefix}{branch}"))
-            })
-            .collect();
-
-        let list = List::new(items)
-            .block(
-                Block::default()
-                    .title(format!(" Worktrees: {repo_name} "))
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Cyan)),
-            )
-            .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
-
-        let mut state = self.worktree_list_state;
-        frame.render_stateful_widget(list, area, &mut state);
-    }
-
     fn select_repo(&mut self) {
         let filtered = self.filtered_repos();
         if let Some(idx) = self.repo_list_state.selected()
             && let Some(repo) = filtered.get(idx)
         {
             let repo = (*repo).clone();
-            self.step = SelectorStep::SelectWorktree;
-
-            match list_worktrees(&repo.path) {
-                Ok(wts) => {
-                    self.worktrees = wts;
-                    self.worktree_list_state.select(Some(0));
-                }
-                Err(_) => {
-                    self.worktrees.clear();
-                }
-            }
-
             self.selected_repo = Some(repo);
-        }
-    }
-
-    fn select_worktree(&mut self) {
-        if let Some(idx) = self.worktree_list_state.selected()
-            && let Some(wt) = self.worktrees.get(idx)
-            && let Some(repo) = &self.selected_repo
-        {
-            self.result = Some(SelectionResult {
-                branch: wt.branch.clone(),
-                repo_name: repo.name.clone(),
-                working_dir: wt.path.clone(),
-            });
-            self.visible = false;
+            self.step = SelectorStep::InputBranchName;
+            self.branch_input.clear();
         }
     }
 }
@@ -213,7 +188,7 @@ impl Component for RepoSelector {
 
         match key.code {
             KeyCode::Esc => {
-                if self.step == SelectorStep::SelectWorktree {
+                if self.step == SelectorStep::InputBranchName {
                     self.step = SelectorStep::SelectRepo;
                 } else {
                     self.close();
@@ -221,28 +196,38 @@ impl Component for RepoSelector {
             }
             KeyCode::Enter => match self.step {
                 SelectorStep::SelectRepo => self.select_repo(),
-                SelectorStep::SelectWorktree => self.select_worktree(),
+                SelectorStep::InputBranchName => self.confirm_branch(),
             },
             KeyCode::Up => self.move_up(),
             KeyCode::Down => self.move_down(),
             KeyCode::Char('k')
-                if self.step == SelectorStep::SelectWorktree || self.filter_query.is_empty() =>
+                if self.step == SelectorStep::SelectRepo && self.filter_query.is_empty() =>
             {
                 self.move_up();
             }
             KeyCode::Char('j')
-                if self.step == SelectorStep::SelectWorktree || self.filter_query.is_empty() =>
+                if self.step == SelectorStep::SelectRepo && self.filter_query.is_empty() =>
             {
                 self.move_down();
             }
-            KeyCode::Char(c) if self.step == SelectorStep::SelectRepo => {
-                self.filter_query.push(c);
-                self.repo_list_state.select(Some(0));
-            }
-            KeyCode::Backspace if self.step == SelectorStep::SelectRepo => {
-                self.filter_query.pop();
-                self.repo_list_state.select(Some(0));
-            }
+            KeyCode::Char(c) => match self.step {
+                SelectorStep::SelectRepo => {
+                    self.filter_query.push(c);
+                    self.repo_list_state.select(Some(0));
+                }
+                SelectorStep::InputBranchName => {
+                    self.branch_input.push(c);
+                }
+            },
+            KeyCode::Backspace => match self.step {
+                SelectorStep::SelectRepo => {
+                    self.filter_query.pop();
+                    self.repo_list_state.select(Some(0));
+                }
+                SelectorStep::InputBranchName => {
+                    self.branch_input.pop();
+                }
+            },
             _ => {}
         }
         Action::None
@@ -259,7 +244,7 @@ impl Component for RepoSelector {
 
         match self.step {
             SelectorStep::SelectRepo => self.render_repo_list(frame, popup_area),
-            SelectorStep::SelectWorktree => self.render_worktree_list(frame, popup_area),
+            SelectorStep::InputBranchName => self.render_branch_input(frame, popup_area),
         }
     }
 }
@@ -319,11 +304,39 @@ mod tests {
         let mut selector = RepoSelector::new();
         selector.result = Some(SelectionResult {
             branch: "main".to_string(),
-            repo_name: "test".to_string(),
-            working_dir: "/tmp".to_string(),
+            repo: Repository {
+                path: "/tmp".to_string(),
+                name: "test".to_string(),
+            },
         });
         let result = selector.take_result();
         assert!(result.is_some());
         assert!(selector.result.is_none());
+    }
+
+    #[test]
+    fn confirm_branch_requires_non_empty() {
+        let mut selector = RepoSelector::new();
+        selector.selected_repo = Some(Repository {
+            path: "/tmp".to_string(),
+            name: "test".to_string(),
+        });
+        selector.branch_input = "  ".to_string();
+        selector.confirm_branch();
+        assert!(selector.result.is_none());
+    }
+
+    #[test]
+    fn confirm_branch_sets_result() {
+        let mut selector = RepoSelector::new();
+        selector.selected_repo = Some(Repository {
+            path: "/tmp".to_string(),
+            name: "test/repo".to_string(),
+        });
+        selector.branch_input = "feat-new".to_string();
+        selector.confirm_branch();
+        let result = selector.result.as_ref().unwrap();
+        assert_eq!(result.branch, "feat-new");
+        assert_eq!(result.repo.name, "test/repo");
     }
 }

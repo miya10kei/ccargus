@@ -1,7 +1,7 @@
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
-    CreateSession,
+    CreateWorktree,
     DeleteSession,
     FocusNext,
     None,
@@ -11,6 +11,8 @@ pub enum Action {
     SelectNextSession,
     SelectPrevSession,
     SendBytes(Vec<u8>),
+    StartSession,
+    StopSession,
     Tick,
 }
 
@@ -25,7 +27,7 @@ mod tests {
         assert_eq!(Action::Render, Action::Render);
         assert_eq!(Action::None, Action::None);
         assert_eq!(Action::FocusNext, Action::FocusNext);
-        assert_eq!(Action::CreateSession, Action::CreateSession);
+        assert_eq!(Action::CreateWorktree, Action::CreateWorktree);
         assert_eq!(Action::DeleteSession, Action::DeleteSession);
         assert_eq!(Action::SelectNextSession, Action::SelectNextSession);
         assert_eq!(Action::SelectPrevSession, Action::SelectPrevSession);

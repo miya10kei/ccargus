@@ -10,6 +10,7 @@ use crate::components::Component;
 pub struct SessionEntry {
     pub branch: String,
     pub repo: String,
+    pub running: bool,
 }
 
 pub struct SessionTree {
@@ -47,12 +48,18 @@ impl SessionTree {
         for (repo, entries) in &groups {
             items.push(ListItem::new(format!("\u{25bc} {repo}")));
             for entry in entries {
-                let marker = if flat_index == self.selected {
-                    "\u{25b6}"
+                let marker = if entry.running {
+                    "\u{25b6}" // ▶ running
                 } else {
-                    " "
+                    "\u{25cb}" // ○ stopped
                 };
-                items.push(ListItem::new(format!("  {marker} {}", entry.branch)));
+                let is_selected = flat_index == self.selected;
+                let style = if is_selected {
+                    Style::default().fg(Color::Cyan)
+                } else {
+                    Style::default()
+                };
+                items.push(ListItem::new(format!("  {marker} {}", entry.branch)).style(style));
                 flat_index += 1;
             }
         }
@@ -137,6 +144,7 @@ mod tests {
         SessionEntry {
             branch: branch.to_owned(),
             repo: repo.to_owned(),
+            running: true,
         }
     }
 
