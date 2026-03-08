@@ -200,7 +200,7 @@ fn update_components(
         .iter()
         .map(|wt| WorktreeItem {
             branch: wt.branch.clone(),
-            repo: wt.repo.clone(),
+            repo: wt.display_name().to_string(),
             running: wt.is_running(),
         })
         .collect();
@@ -240,7 +240,7 @@ fn build_status_line(app: &app::App) -> StatusLine {
                 branch: wt.branch.clone(),
                 dir: wt.working_dir(),
                 qa_mode,
-                repo: wt.repo.clone(),
+                repo: wt.display_name().to_string(),
                 status: status.to_owned(),
             }
         },
