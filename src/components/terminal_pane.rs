@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders};
 
@@ -12,6 +12,8 @@ const PLACEHOLDER_TEXT: &str = "No session selected. Press 'n' to create a new s
 
 pub struct TerminalPane {
     pub focused: bool,
+    pub qa_focused: bool,
+    pub qa_screen: Option<Arc<Mutex<vt100::Parser>>>,
     pub screen: Option<Arc<Mutex<vt100::Parser>>>,
 }
 
@@ -19,25 +21,25 @@ impl TerminalPane {
     pub fn new() -> Self {
         Self {
             focused: false,
+            qa_focused: false,
+            qa_screen: None,
             screen: None,
         }
     }
 
-    fn border_color(&self) -> Color {
-        if self.focused {
+    fn border_color_for(focused: bool) -> Color {
+        if focused {
             Color::Cyan
         } else {
             Color::DarkGray
         }
     }
-}
 
-impl Component for TerminalPane {
-    fn render(&self, frame: &mut Frame, area: Rect) {
+    fn render_single_pane(&self, frame: &mut Frame, area: Rect) {
         let block = Block::default()
             .title(" Terminal ")
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(self.border_color()));
+            .border_style(Style::default().fg(Self::border_color_for(self.focused)));
 
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -49,6 +51,55 @@ impl Component for TerminalPane {
             }
         } else {
             render_placeholder(inner, frame.buffer_mut());
+        }
+    }
+
+    fn render_split_pane(&self, frame: &mut Frame, area: Rect) {
+        let horizontal = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(area);
+
+        // Main terminal (left)
+        let main_block = Block::default()
+            .title(" Terminal ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Self::border_color_for(self.focused)));
+
+        let main_inner = main_block.inner(horizontal[0]);
+        frame.render_widget(main_block, horizontal[0]);
+
+        if let Some(parser_arc) = &self.screen
+            && let Ok(parser) = parser_arc.lock()
+        {
+            let vt_screen = parser.screen();
+            render_vt100_screen(vt_screen, main_inner, frame.buffer_mut());
+        }
+
+        // Q&A terminal (right)
+        let qa_block = Block::default()
+            .title(" Q&A ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Self::border_color_for(self.qa_focused)));
+
+        let qa_inner = qa_block.inner(horizontal[1]);
+        frame.render_widget(qa_block, horizontal[1]);
+
+        if let Some(parser_arc) = &self.qa_screen
+            && let Ok(parser) = parser_arc.lock()
+        {
+            let vt_screen = parser.screen();
+            render_vt100_screen(vt_screen, qa_inner, frame.buffer_mut());
+        }
+    }
+}
+
+impl Component for TerminalPane {
+    fn render(&self, frame: &mut Frame, area: Rect) {
+        if self.qa_screen.is_some() {
+            self.render_split_pane(frame, area);
+        } else {
+            self.render_single_pane(frame, area);
         }
     }
 }
@@ -157,6 +208,8 @@ mod tests {
 
         let pane = TerminalPane {
             focused: true,
+            qa_focused: false,
+            qa_screen: None,
             screen: Some(Arc::clone(&parser)),
         };
 

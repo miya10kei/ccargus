@@ -8,6 +8,31 @@ pub struct SessionInfo {
     pub repo: String,
     pub branch: String,
     pub pty: PtySession,
+    pub qa_pty: Option<PtySession>,
+}
+
+impl SessionInfo {
+    pub fn close_qa_session(&mut self) {
+        if let Some(qa) = &mut self.qa_pty {
+            qa.kill();
+        }
+        self.qa_pty = None;
+    }
+
+    pub fn create_qa_session(&mut self, fork: bool, rows: u16, cols: u16) -> Result<()> {
+        let working_dir = self.pty.working_dir().to_owned();
+        let qa_pty = if fork {
+            PtySession::spawn_with_args("claude", &["--continue"], &working_dir, rows, cols)?
+        } else {
+            PtySession::spawn("claude", &working_dir, rows, cols)?
+        };
+        self.qa_pty = Some(qa_pty);
+        Ok(())
+    }
+
+    pub fn has_qa_session(&self) -> bool {
+        self.qa_pty.is_some()
+    }
 }
 
 pub struct SessionManager {
@@ -41,6 +66,7 @@ impl SessionManager {
             repo: repo.to_string(),
             branch: branch.to_string(),
             pty,
+            qa_pty: None,
         });
         Ok(id)
     }
@@ -63,6 +89,7 @@ impl SessionManager {
 
     pub fn remove_session(&mut self, index: usize) {
         if index < self.sessions.len() {
+            self.sessions[index].close_qa_session();
             self.sessions[index].pty.kill();
             self.sessions.remove(index);
         }
@@ -89,6 +116,7 @@ impl SessionManager {
             repo: repo.to_string(),
             branch: branch.to_string(),
             pty,
+            qa_pty: None,
         });
         Ok(id)
     }

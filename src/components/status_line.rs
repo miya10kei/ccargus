@@ -9,6 +9,7 @@ use crate::components::Component;
 pub struct StatusLine {
     pub branch: String,
     pub dir: String,
+    pub qa_mode: Option<String>,
     pub repo: String,
     pub status: String,
 }
@@ -18,6 +19,7 @@ impl StatusLine {
         Self {
             branch: String::new(),
             dir: String::new(),
+            qa_mode: None,
             repo: String::new(),
             status: String::new(),
         }
@@ -26,7 +28,7 @@ impl StatusLine {
 
 impl Component for StatusLine {
     fn render(&self, frame: &mut Frame, area: Rect) {
-        let line = Line::from(vec![
+        let mut spans = vec![
             Span::styled(
                 format!(" {} ", self.repo),
                 Style::default().fg(Color::Black).bg(Color::Cyan),
@@ -40,8 +42,16 @@ impl Component for StatusLine {
                 format!(" {} ", self.status),
                 Style::default().fg(Color::Yellow),
             ),
-        ]);
+        ];
 
+        if let Some(qa) = &self.qa_mode {
+            spans.push(Span::styled(
+                format!(" Q&A: {qa} "),
+                Style::default().fg(Color::Magenta),
+            ));
+        }
+
+        let line = Line::from(spans);
         let paragraph = Paragraph::new(line);
         frame.render_widget(paragraph, area);
     }
@@ -61,6 +71,7 @@ mod tests {
         let status = StatusLine {
             branch: "main".to_owned(),
             dir: "/home/user/project".to_owned(),
+            qa_mode: None,
             repo: "miya10kei/ccargus".to_owned(),
             status: "running".to_owned(),
         };

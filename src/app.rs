@@ -12,6 +12,7 @@ pub enum Focus {
     #[default]
     Sessions,
     Terminal,
+    QaTerminal,
 }
 
 pub struct App {
@@ -49,10 +50,25 @@ impl App {
         self.selected_session = self.selected_session.saturating_sub(1);
     }
 
-    pub fn toggle_focus(&mut self) {
+    pub fn toggle_focus(&mut self, has_qa: bool) {
         self.focus = match self.focus {
             Focus::Sessions => Focus::Terminal,
-            Focus::Terminal => Focus::Sessions,
+            Focus::Terminal => {
+                if has_qa {
+                    Focus::QaTerminal
+                } else {
+                    Focus::Sessions
+                }
+            }
+            Focus::QaTerminal => Focus::Sessions,
+        };
+    }
+
+    pub fn toggle_terminal_qa_focus(&mut self) {
+        self.focus = match self.focus {
+            Focus::Terminal => Focus::QaTerminal,
+            Focus::QaTerminal => Focus::Terminal,
+            Focus::Sessions => Focus::Sessions,
         };
     }
 }
@@ -78,12 +94,42 @@ mod tests {
     }
 
     #[test]
-    fn toggle_focus_switches() {
+    fn toggle_focus_without_qa() {
         let mut app = App::new();
         assert_eq!(app.focus, Focus::Sessions);
-        app.toggle_focus();
+        app.toggle_focus(false);
         assert_eq!(app.focus, Focus::Terminal);
-        app.toggle_focus();
+        app.toggle_focus(false);
+        assert_eq!(app.focus, Focus::Sessions);
+    }
+
+    #[test]
+    fn toggle_focus_with_qa() {
+        let mut app = App::new();
+        assert_eq!(app.focus, Focus::Sessions);
+        app.toggle_focus(true);
+        assert_eq!(app.focus, Focus::Terminal);
+        app.toggle_focus(true);
+        assert_eq!(app.focus, Focus::QaTerminal);
+        app.toggle_focus(true);
+        assert_eq!(app.focus, Focus::Sessions);
+    }
+
+    #[test]
+    fn toggle_terminal_qa_focus_switches() {
+        let mut app = App::new();
+        app.focus = Focus::Terminal;
+        app.toggle_terminal_qa_focus();
+        assert_eq!(app.focus, Focus::QaTerminal);
+        app.toggle_terminal_qa_focus();
+        assert_eq!(app.focus, Focus::Terminal);
+    }
+
+    #[test]
+    fn toggle_terminal_qa_focus_noop_from_sessions() {
+        let mut app = App::new();
+        assert_eq!(app.focus, Focus::Sessions);
+        app.toggle_terminal_qa_focus();
         assert_eq!(app.focus, Focus::Sessions);
     }
 

@@ -15,6 +15,16 @@ pub struct PtySession {
 
 impl PtySession {
     pub fn spawn(cmd: &str, working_dir: &str, rows: u16, cols: u16) -> Result<Self> {
+        Self::spawn_with_args(cmd, &[], working_dir, rows, cols)
+    }
+
+    pub fn spawn_with_args(
+        cmd: &str,
+        args: &[&str],
+        working_dir: &str,
+        rows: u16,
+        cols: u16,
+    ) -> Result<Self> {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -26,6 +36,9 @@ impl PtySession {
             .map_err(|e| eyre!(e))?;
 
         let mut command = CommandBuilder::new(cmd);
+        for arg in args {
+            command.arg(arg);
+        }
         command.cwd(working_dir);
 
         let child = pair.slave.spawn_command(command).map_err(|e| eyre!(e))?;
