@@ -57,11 +57,12 @@ async fn main() -> Result<()> {
                     &worktree_manager,
                     &mut repo_selector,
                     &mut qa_selector,
+                    &mut terminal_pane,
                     key,
                 );
             }
             event::Event::Mouse(mouse) => {
-                handle_mouse_event(&mut app, &mut editor_float, mouse);
+                handle_mouse_event(&mut app, &mut editor_float, &mut terminal_pane, mouse);
             }
             event::Event::Render => {
                 update_components(&app, &mut worktree_tree, &mut terminal_pane);
@@ -105,6 +106,7 @@ fn handle_key_press(
     worktree_manager: &WorktreeManager,
     repo_selector: &mut RepoSelector,
     qa_selector: &mut QaSelector,
+    terminal_pane: &mut TerminalPane,
     key: crossterm::event::KeyEvent,
 ) {
     if editor_float.visible {
@@ -181,8 +183,8 @@ fn handle_key_press(
                     key,
                 );
             }
-            Focus::Terminal => handle_terminal_key(app, key),
-            Focus::QaTerminal => handle_qa_terminal_key(app, key),
+            Focus::Terminal => handle_terminal_key(app, terminal_pane, key),
+            Focus::QaTerminal => handle_qa_terminal_key(app, terminal_pane, key),
         }
     }
 }
@@ -206,14 +208,25 @@ fn update_components(
         .collect();
     terminal_pane.focused = app.focus == Focus::Terminal;
     terminal_pane.qa_focused = app.focus == Focus::QaTerminal;
-    terminal_pane.screen = app
+    let new_screen = app
         .worktree_pool
         .get(app.selected_worktree)
         .and_then(|wt| wt.pty.as_ref().map(domain::pty::PtySession::screen));
-    terminal_pane.qa_screen = app
+    let new_qa_screen = app
         .worktree_pool
         .get(app.selected_worktree)
         .and_then(|wt| wt.qa_pty.as_ref().map(domain::pty::PtySession::screen));
+
+    // Reset scroll offset when the screen changes (e.g. worktree switch)
+    if terminal_pane.screen.is_some() != new_screen.is_some() || new_screen.is_none() {
+        terminal_pane.scroll_offset = 0;
+    }
+    if terminal_pane.qa_screen.is_some() != new_qa_screen.is_some() || new_qa_screen.is_none() {
+        terminal_pane.qa_scroll_offset = 0;
+    }
+
+    terminal_pane.screen = new_screen;
+    terminal_pane.qa_screen = new_qa_screen;
 }
 
 fn build_status_line(app: &app::App) -> StatusLine {
@@ -250,8 +263,30 @@ fn build_status_line(app: &app::App) -> StatusLine {
 fn handle_mouse_event(
     app: &mut app::App,
     editor_float: &mut EditorFloat,
+    terminal_pane: &mut TerminalPane,
     mouse: crossterm::event::MouseEvent,
 ) {
+    use crossterm::event::MouseEventKind;
+
+    let is_scroll_wheel = matches!(
+        mouse.kind,
+        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+    );
+
+    if is_scroll_wheel
+        && !editor_float.visible
+        && matches!(app.focus, Focus::Terminal | Focus::QaTerminal)
+    {
+        let is_qa = app.focus == Focus::QaTerminal;
+        let max = scrollback_max(app, is_qa);
+        match mouse.kind {
+            MouseEventKind::ScrollUp => terminal_pane.scroll_up(is_qa, 3, max),
+            MouseEventKind::ScrollDown => terminal_pane.scroll_down(is_qa, 3),
+            _ => {}
+        }
+        return;
+    }
+
     let bytes = mouse_to_bytes(mouse);
     if bytes.is_empty() {
         return;
@@ -275,7 +310,93 @@ fn handle_mouse_event(
     }
 }
 
-fn handle_qa_terminal_key(app: &mut app::App, key: crossterm::event::KeyEvent) {
+fn scrollback_max(app: &app::App, qa: bool) -> usize {
+    app.worktree_pool
+        .get(app.selected_worktree)
+        .and_then(|wt| {
+            let pty = if qa {
+                wt.qa_pty.as_ref()
+            } else {
+                wt.pty.as_ref()
+            };
+            pty.and_then(|p| {
+                p.screen().lock().ok().map(|mut parser| {
+                    let screen = parser.screen_mut();
+                    // set_scrollback clamps to the actual scrollback buffer size
+                    screen.set_scrollback(usize::MAX);
+                    let max = screen.scrollback();
+                    screen.set_scrollback(0);
+                    max
+                })
+            })
+        })
+        .unwrap_or(0)
+}
+
+fn terminal_half_page_size() -> usize {
+    let (_cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    usize::from(rows) / 2
+}
+
+/// Returns true if the key was handled as a scroll action.
+fn handle_scroll_key(
+    app: &app::App,
+    terminal_pane: &mut TerminalPane,
+    key: crossterm::event::KeyEvent,
+    qa: bool,
+) -> bool {
+    // Ctrl+b: enter/continue scroll mode (half page up)
+    if key.code == KeyCode::Char('b') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        let max = scrollback_max(app, qa);
+        terminal_pane.scroll_up(qa, terminal_half_page_size(), max);
+        return true;
+    }
+
+    // Ctrl+f: half page down
+    if key.code == KeyCode::Char('f') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        terminal_pane.scroll_down(qa, terminal_half_page_size());
+        return true;
+    }
+
+    if !terminal_pane.is_scrolling(qa) {
+        return false;
+    }
+
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            let max = scrollback_max(app, qa);
+            terminal_pane.scroll_up(qa, 1, max);
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            terminal_pane.scroll_down(qa, 1);
+        }
+        KeyCode::PageUp => {
+            let max = scrollback_max(app, qa);
+            terminal_pane.scroll_up(qa, terminal_half_page_size() * 2, max);
+        }
+        KeyCode::PageDown => {
+            terminal_pane.scroll_down(qa, terminal_half_page_size() * 2);
+        }
+        KeyCode::Esc | KeyCode::Char('q') => {
+            terminal_pane.exit_scroll(qa);
+        }
+        _ => {
+            terminal_pane.exit_scroll(qa);
+            return false;
+        }
+    }
+    true
+}
+
+fn handle_qa_terminal_key(
+    app: &mut app::App,
+    terminal_pane: &mut TerminalPane,
+    key: crossterm::event::KeyEvent,
+) {
+    if handle_scroll_key(app, terminal_pane, key, true) {
+        return;
+    }
+
     if key.code == KeyCode::Tab {
         let has_qa = app
             .worktree_pool
@@ -386,7 +507,15 @@ fn handle_worktrees_key(
     }
 }
 
-fn handle_terminal_key(app: &mut app::App, key: crossterm::event::KeyEvent) {
+fn handle_terminal_key(
+    app: &mut app::App,
+    terminal_pane: &mut TerminalPane,
+    key: crossterm::event::KeyEvent,
+) {
+    if handle_scroll_key(app, terminal_pane, key, false) {
+        return;
+    }
+
     if key.code == KeyCode::Tab {
         let has_qa = app
             .worktree_pool
