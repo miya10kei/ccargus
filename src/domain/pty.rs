@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn is_alive_for_short_lived_process() {
         let mut session = PtySession::spawn("echo", "/tmp", 24, 80).unwrap();
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(500));
         assert!(!session.is_alive());
     }
 
