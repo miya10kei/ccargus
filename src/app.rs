@@ -41,13 +41,15 @@ impl App {
     }
 
     pub fn select_next_worktree(&mut self, max: usize) {
-        if max > 0 && self.selected_worktree < max - 1 {
-            self.selected_worktree += 1;
+        if max > 0 {
+            self.selected_worktree = (self.selected_worktree + 1) % max;
         }
     }
 
-    pub fn select_prev_worktree(&mut self) {
-        self.selected_worktree = self.selected_worktree.saturating_sub(1);
+    pub fn select_prev_worktree(&mut self, max: usize) {
+        if max > 0 {
+            self.selected_worktree = (self.selected_worktree + max - 1) % max;
+        }
     }
 
     pub fn toggle_focus(&mut self, has_qa: bool) {
@@ -134,14 +136,14 @@ mod tests {
     }
 
     #[test]
-    fn select_next_within_bounds() {
+    fn select_next_wraps_around() {
         let mut app = App::new();
         app.select_next_worktree(3);
         assert_eq!(app.selected_worktree, 1);
         app.select_next_worktree(3);
         assert_eq!(app.selected_worktree, 2);
         app.select_next_worktree(3);
-        assert_eq!(app.selected_worktree, 2);
+        assert_eq!(app.selected_worktree, 0);
     }
 
     #[test]
@@ -152,14 +154,21 @@ mod tests {
     }
 
     #[test]
-    fn select_prev_with_floor() {
+    fn select_prev_wraps_around() {
         let mut app = App::new();
         app.selected_worktree = 2;
-        app.select_prev_worktree();
+        app.select_prev_worktree(3);
         assert_eq!(app.selected_worktree, 1);
-        app.select_prev_worktree();
+        app.select_prev_worktree(3);
         assert_eq!(app.selected_worktree, 0);
-        app.select_prev_worktree();
+        app.select_prev_worktree(3);
+        assert_eq!(app.selected_worktree, 2);
+    }
+
+    #[test]
+    fn select_prev_noop_when_empty() {
+        let mut app = App::new();
+        app.select_prev_worktree(0);
         assert_eq!(app.selected_worktree, 0);
     }
 }

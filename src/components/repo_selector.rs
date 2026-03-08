@@ -145,15 +145,14 @@ impl RepoSelector {
                 let current = self.base_branch_list_state.selected().unwrap_or(0);
                 if max > 0 {
                     self.base_branch_list_state
-                        .select(Some((current + 1).min(max - 1)));
+                        .select(Some((current + 1) % max));
                 }
             }
             SelectorStep::SelectRepo => {
                 let max = self.filtered_repos().len();
                 let current = self.repo_list_state.selected().unwrap_or(0);
                 if max > 0 {
-                    self.repo_list_state
-                        .select(Some((current + 1).min(max - 1)));
+                    self.repo_list_state.select(Some((current + 1) % max));
                 }
             }
             SelectorStep::InputBranchName => {}
@@ -163,13 +162,20 @@ impl RepoSelector {
     fn move_up(&mut self) {
         match self.step {
             SelectorStep::SelectBaseBranch => {
+                let max = self.filtered_local_branches().len();
                 let current = self.base_branch_list_state.selected().unwrap_or(0);
-                self.base_branch_list_state
-                    .select(Some(current.saturating_sub(1)));
+                if max > 0 {
+                    self.base_branch_list_state
+                        .select(Some((current + max - 1) % max));
+                }
             }
             SelectorStep::SelectRepo => {
+                let max = self.filtered_repos().len();
                 let current = self.repo_list_state.selected().unwrap_or(0);
-                self.repo_list_state.select(Some(current.saturating_sub(1)));
+                if max > 0 {
+                    self.repo_list_state
+                        .select(Some((current + max - 1) % max));
+                }
             }
             SelectorStep::InputBranchName => {}
         }
