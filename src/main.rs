@@ -4,6 +4,7 @@ use ratatui::layout::{Constraint, Direction, Layout};
 
 use crate::app::Focus;
 use crate::components::Component;
+use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::editor_float::EditorFloat;
 use crate::components::qa_selector::{QaMode, QaSelector};
 use crate::components::repo_selector::RepoSelector;
@@ -37,6 +38,7 @@ async fn main() -> Result<()> {
     let entries = worktree_manager.scan()?;
     app.session_manager.sync_with_worktrees(&entries);
 
+    let mut confirm_dialog = ConfirmDialog::new();
     let mut editor_float = EditorFloat::new();
     let mut qa_selector = QaSelector::new();
     let mut repo_selector = RepoSelector::new();
@@ -49,6 +51,7 @@ async fn main() -> Result<()> {
             event::Event::Key(key) if key.kind == KeyEventKind::Press => {
                 handle_key_press(
                     &mut app,
+                    &mut confirm_dialog,
                     &mut editor_float,
                     &config,
                     &worktree_manager,
@@ -81,6 +84,7 @@ async fn main() -> Result<()> {
 
                     repo_selector.render(frame, frame.area());
                     qa_selector.render(frame, frame.area());
+                    confirm_dialog.render(frame, frame.area());
                     editor_float.render(frame, frame.area());
                 })?;
             }
@@ -92,8 +96,10 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_key_press(
     app: &mut app::App,
+    confirm_dialog: &mut ConfirmDialog,
     editor_float: &mut EditorFloat,
     config: &Config,
     worktree_manager: &WorktreeManager,
@@ -113,6 +119,22 @@ fn handle_key_press(
         let bytes = key_to_bytes(key);
         if !bytes.is_empty() {
             let _ = editor_float.write(&bytes);
+        }
+        return;
+    }
+
+    if confirm_dialog.visible {
+        confirm_dialog.handle_key_event(key);
+
+        if let Some(true) = confirm_dialog.take_result()
+            && let Some(session) = app.session_manager.get(app.selected_session)
+        {
+            let entry = session.to_worktree_entry();
+            let _ = worktree_manager.remove_worktree(&entry);
+            app.session_manager.remove_session(app.selected_session);
+            if app.selected_session >= app.session_manager.len() && app.selected_session > 0 {
+                app.selected_session -= 1;
+            }
         }
         return;
     }
@@ -151,9 +173,9 @@ fn handle_key_press(
             Focus::Sessions => {
                 handle_sessions_key(
                     app,
+                    confirm_dialog,
                     editor_float,
                     config,
-                    worktree_manager,
                     repo_selector,
                     qa_selector,
                     key,
@@ -287,11 +309,12 @@ fn handle_qa_terminal_key(app: &mut app::App, key: crossterm::event::KeyEvent) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_sessions_key(
     app: &mut app::App,
+    confirm_dialog: &mut ConfirmDialog,
     editor_float: &mut EditorFloat,
     config: &Config,
-    worktree_manager: &WorktreeManager,
     repo_selector: &mut RepoSelector,
     qa_selector: &mut QaSelector,
     key: crossterm::event::KeyEvent,
@@ -303,17 +326,8 @@ fn handle_sessions_key(
         }
         KeyCode::Char('d') => {
             if let Some(session) = app.session_manager.get(app.selected_session) {
-                let entry = domain::worktree::WorktreeEntry {
-                    branch: session.branch.clone(),
-                    repo_name: session.repo.clone(),
-                    source_repo_path: session.source_repo_path.clone(),
-                    worktree_path: session.worktree_path.clone(),
-                };
-                let _ = worktree_manager.remove_worktree(&entry);
-                app.session_manager.remove_session(app.selected_session);
-                if app.selected_session >= app.session_manager.len() && app.selected_session > 0 {
-                    app.selected_session -= 1;
-                }
+                let message = format!("Delete session '{}/{}'?", session.repo, session.branch);
+                confirm_dialog.open(message);
             }
         }
         KeyCode::Char('e') => {
