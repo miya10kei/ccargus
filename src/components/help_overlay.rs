@@ -7,14 +7,19 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::components::Component;
 use crate::components::utils::centered_rect_percent;
+use crate::config::KeybindingsConfig;
 
 pub struct HelpOverlay {
+    pub keybindings: KeybindingsConfig,
     pub visible: bool,
 }
 
 impl HelpOverlay {
-    pub fn new() -> Self {
-        Self { visible: false }
+    pub fn new(keybindings: KeybindingsConfig) -> Self {
+        Self {
+            keybindings,
+            visible: false,
+        }
     }
 
     pub fn toggle(&mut self) {
@@ -22,14 +27,14 @@ impl HelpOverlay {
     }
 }
 
-fn help_entry<'a>(key: &'a str, desc: &'a str, style: Style) -> Line<'a> {
+fn help_entry(key: &str, desc: &str, style: Style) -> Line<'static> {
     Line::from(vec![
         Span::styled(format!("  {key:<10}"), style),
-        Span::raw(desc),
+        Span::raw(desc.to_owned()),
     ])
 }
 
-fn build_help_lines() -> Vec<Line<'static>> {
+fn build_help_lines(keybindings: &KeybindingsConfig) -> Vec<Line<'static>> {
     let header = Style::default()
         .fg(Color::Cyan)
         .add_modifier(Modifier::BOLD);
@@ -37,10 +42,18 @@ fn build_help_lines() -> Vec<Line<'static>> {
 
     vec![
         Line::from(Span::styled("Worktree Pane", header)),
-        help_entry("n", "New worktree", key),
-        help_entry("d", "Delete worktree", key),
-        help_entry("e", "Open editor", key),
-        help_entry("s", "Start Q&A session", key),
+        help_entry(&keybindings.new_worktree.to_string(), "New worktree", key),
+        help_entry(
+            &keybindings.delete_worktree.to_string(),
+            "Delete worktree",
+            key,
+        ),
+        help_entry(&keybindings.open_editor.to_string(), "Open editor", key),
+        help_entry(
+            &keybindings.qa_worktree.to_string(),
+            "Start Q&A session",
+            key,
+        ),
         help_entry("x", "Stop worktree", key),
         help_entry("j/k", "Navigate worktrees", key),
         help_entry("Enter", "Focus / Start worktree", key),
@@ -89,7 +102,7 @@ impl Component for HelpOverlay {
         let popup_area = centered_rect_percent(60, 70, area);
         frame.render_widget(Clear, popup_area);
 
-        let paragraph = Paragraph::new(build_help_lines()).block(
+        let paragraph = Paragraph::new(build_help_lines(&self.keybindings)).block(
             Block::default()
                 .title(" Help ")
                 .borders(Borders::ALL)
@@ -106,13 +119,13 @@ mod tests {
 
     #[test]
     fn new_overlay_is_not_visible() {
-        let overlay = HelpOverlay::new();
+        let overlay = HelpOverlay::new(KeybindingsConfig::default());
         assert!(!overlay.visible);
     }
 
     #[test]
     fn toggle_changes_visibility() {
-        let mut overlay = HelpOverlay::new();
+        let mut overlay = HelpOverlay::new(KeybindingsConfig::default());
         overlay.toggle();
         assert!(overlay.visible);
         overlay.toggle();
@@ -121,7 +134,7 @@ mod tests {
 
     #[test]
     fn esc_closes_overlay() {
-        let mut overlay = HelpOverlay::new();
+        let mut overlay = HelpOverlay::new(KeybindingsConfig::default());
         overlay.visible = true;
         let key = KeyEvent::new(KeyCode::Esc, crossterm::event::KeyModifiers::NONE);
         overlay.handle_key_event(key);
@@ -130,7 +143,7 @@ mod tests {
 
     #[test]
     fn question_mark_closes_overlay() {
-        let mut overlay = HelpOverlay::new();
+        let mut overlay = HelpOverlay::new(KeybindingsConfig::default());
         overlay.visible = true;
         let key = KeyEvent::new(KeyCode::Char('?'), crossterm::event::KeyModifiers::NONE);
         overlay.handle_key_event(key);
@@ -139,7 +152,7 @@ mod tests {
 
     #[test]
     fn other_keys_ignored_when_visible() {
-        let mut overlay = HelpOverlay::new();
+        let mut overlay = HelpOverlay::new(KeybindingsConfig::default());
         overlay.visible = true;
         let key = KeyEvent::new(KeyCode::Char('x'), crossterm::event::KeyModifiers::NONE);
         overlay.handle_key_event(key);

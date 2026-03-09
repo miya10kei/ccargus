@@ -111,20 +111,29 @@ ccargus
 
 ## 設定
 
-`~/.config/ccargus/config.toml`:
+`~/.config/ccargus/config.toml` に配置します。全設定例は [`config.example.toml`](config.example.toml) を参照してください。
 
 ```toml
+[claude]
+command = "claude"                              # Claude Code 実行コマンド (default: "claude")
+plan = false                                    # planning mode で起動 (default: false)
+
 [editor]
-command = "vim"           # エディタコマンド (default: "vim")
+command = "vim"                                 # エディタコマンド (default: "vim")
 
 [keybindings]
-new_worktree = "n"        # 新規worktree (default: "n")
-delete_worktree = "d"     # worktree削除 (default: "d")
-open_editor = "e"         # エディタ起動 (default: "e")
-qa_worktree = "s"         # Q&A起動 (default: "s")
+new_worktree = "n"                              # 新規worktree (default: "n")
+delete_worktree = "d"                           # worktree削除 (default: "d")
+open_editor = "e"                               # エディタ起動 (default: "e")
+qa_worktree = "s"                               # Q&A起動 (default: "s")
+
+[layout]
+worktree_pane_percent = 20                      # 左ペイン幅 % (default: 20)
+qa_split_percent = 50                           # Q&Aペイン幅 % (default: 50)
 
 [worktree]
-base_dir = "~/.local/share/ccargus/worktrees"  # worktree格納先
+base_dir = "~/.local/share/ccargus/worktrees"   # worktree格納先
+protected_branches = ["main", "master", "develop"]  # 削除禁止ブランチ
 ```
 
 ## アーキテクチャ

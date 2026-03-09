@@ -208,7 +208,7 @@ mod tests {
     use crate::components::repo_selector::RepoSelector;
     use crate::components::terminal_pane::TerminalPane;
     use crate::components::worktree_tree::WorktreeTree;
-    use crate::config::Config;
+    use crate::config::{Config, KeybindingsConfig};
     use crate::domain::worktree::WorktreePool;
 
     struct TestEnv {
@@ -235,12 +235,12 @@ mod tests {
             ui: UiContext {
                 confirm_dialog: ConfirmDialog::new(),
                 editor_float: EditorFloat::new(),
-                help_overlay: HelpOverlay::new(),
+                help_overlay: HelpOverlay::new(KeybindingsConfig::default()),
                 last_worktree_area: None,
                 last_terminal_area: None,
                 qa_selector: QaSelector::new(),
                 repo_selector: RepoSelector::new(),
-                terminal_pane: TerminalPane::new(),
+                terminal_pane: TerminalPane::new('n', 50),
                 worktree_tree: WorktreeTree::new(),
             },
             _tmp: tmp,

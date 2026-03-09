@@ -17,11 +17,14 @@ const BANNER: &[&str] = &[
     " ╚██████╗╚██████╗ ██║  ██║██║  ██║╚██████╔╝╚██████╔╝███████║",
     "  ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝",
 ];
-const HINT_TEXT: &str = "Press 'n' to create a new worktree.";
+fn hint_text(key: char) -> String {
+    format!("Press '{key}' to create a new worktree.")
+}
 
 pub struct TerminalPane {
     pub copy_mode: Option<CopyModeState>,
     pub focused: bool,
+    pub new_worktree_key: char,
     pub qa_copy_mode: Option<CopyModeState>,
     pub qa_focused: bool,
     pub qa_screen: Option<Arc<Mutex<vt100::Parser>>>,
@@ -32,15 +35,16 @@ pub struct TerminalPane {
 }
 
 impl TerminalPane {
-    pub fn new() -> Self {
+    pub fn new(new_worktree_key: char, qa_split_percent: u16) -> Self {
         Self {
             copy_mode: None,
             focused: false,
+            new_worktree_key,
             qa_copy_mode: None,
             qa_focused: false,
             qa_screen: None,
             qa_scroll_offset: 0,
-            qa_split_percent: 50,
+            qa_split_percent,
             screen: None,
             scroll_offset: 0,
         }
@@ -247,7 +251,7 @@ impl TerminalPane {
                 )));
             let inner = block.inner(area);
             frame.render_widget(block, area);
-            render_placeholder(inner, frame.buffer_mut());
+            render_placeholder(inner, frame.buffer_mut(), self.new_worktree_key);
         }
     }
 
@@ -299,7 +303,7 @@ fn convert_color(color: vt100::Color) -> Color {
     }
 }
 
-fn render_placeholder(area: Rect, buf: &mut Buffer) {
+fn render_placeholder(area: Rect, buf: &mut Buffer, new_worktree_key: char) {
     let banner_height = u16::try_from(BANNER.len()).unwrap_or(0);
     let banner_width = u16::try_from(
         BANNER
@@ -335,10 +339,11 @@ fn render_placeholder(area: Rect, buf: &mut Buffer) {
     // Hint text below the banner
     let hint_row = start_y + banner_height + 1;
     if hint_row < area.bottom() {
-        let hint_width = u16::try_from(HINT_TEXT.len()).unwrap_or(0);
+        let hint = hint_text(new_worktree_key);
+        let hint_width = u16::try_from(hint.len()).unwrap_or(0);
         let hint_x = area.x + area.width.saturating_sub(hint_width) / 2;
         let hint_style = Style::default().fg(Color::DarkGray);
-        for (i, ch) in HINT_TEXT.chars().enumerate() {
+        for (i, ch) in hint.chars().enumerate() {
             let col = hint_x + u16::try_from(i).unwrap_or(0);
             if col >= area.right() {
                 break;
@@ -411,7 +416,7 @@ mod tests {
     fn renders_banner_when_no_worktree() {
         let backend = TestBackend::new(80, 20);
         let mut terminal = Terminal::new(backend).unwrap();
-        let pane = TerminalPane::new();
+        let pane = TerminalPane::new('n', 50);
 
         terminal
             .draw(|frame| {
@@ -450,6 +455,7 @@ mod tests {
         let pane = TerminalPane {
             copy_mode: None,
             focused: true,
+            new_worktree_key: 'n',
             qa_copy_mode: None,
             qa_focused: false,
             qa_screen: None,
@@ -498,7 +504,7 @@ mod tests {
 
     #[test]
     fn exit_scroll_resets_offset() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         pane.scroll_offset = 10;
         pane.exit_scroll(false);
         assert_eq!(pane.scroll_offset, 0);
@@ -506,7 +512,7 @@ mod tests {
 
     #[test]
     fn exit_qa_scroll_resets_offset() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         pane.qa_scroll_offset = 5;
         pane.exit_scroll(true);
         assert_eq!(pane.qa_scroll_offset, 0);
@@ -514,7 +520,7 @@ mod tests {
 
     #[test]
     fn is_scrolling_reflects_offset() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         assert!(!pane.is_scrolling(false));
         pane.scroll_offset = 1;
         assert!(pane.is_scrolling(false));
@@ -522,7 +528,7 @@ mod tests {
 
     #[test]
     fn is_qa_scrolling_reflects_offset() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         assert!(!pane.is_scrolling(true));
         pane.qa_scroll_offset = 1;
         assert!(pane.is_scrolling(true));
@@ -530,7 +536,7 @@ mod tests {
 
     #[test]
     fn scroll_down_saturates_at_zero() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         pane.scroll_offset = 2;
         pane.scroll_down(false, 5);
         assert_eq!(pane.scroll_offset, 0);
@@ -538,14 +544,14 @@ mod tests {
 
     #[test]
     fn scroll_up_clamps_to_max() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         pane.scroll_up(false, 100, 50);
         assert_eq!(pane.scroll_offset, 50);
     }
 
     #[test]
     fn scroll_up_increments_offset() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         pane.scroll_up(false, 3, 100);
         assert_eq!(pane.scroll_offset, 3);
         pane.scroll_up(false, 5, 100);
@@ -554,7 +560,7 @@ mod tests {
 
     #[test]
     fn scroll_down_decrements_offset() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         pane.scroll_offset = 10;
         pane.scroll_down(false, 3);
         assert_eq!(pane.scroll_offset, 7);
@@ -562,14 +568,14 @@ mod tests {
 
     #[test]
     fn qa_scroll_up_clamps_to_max() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         pane.scroll_up(true, 100, 30);
         assert_eq!(pane.qa_scroll_offset, 30);
     }
 
     #[test]
     fn qa_scroll_down_saturates_at_zero() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         pane.qa_scroll_offset = 1;
         pane.scroll_down(true, 5);
         assert_eq!(pane.qa_scroll_offset, 0);
@@ -585,6 +591,7 @@ mod tests {
         let pane = TerminalPane {
             copy_mode: None,
             focused: true,
+            new_worktree_key: 'n',
             qa_copy_mode: None,
             qa_focused: false,
             qa_screen: None,
@@ -621,6 +628,7 @@ mod tests {
         let pane = TerminalPane {
             copy_mode: None,
             focused: true,
+            new_worktree_key: 'n',
             qa_copy_mode: None,
             qa_focused: false,
             qa_screen: None,
@@ -666,6 +674,7 @@ mod tests {
         let pane = TerminalPane {
             copy_mode: None,
             focused: true,
+            new_worktree_key: 'n',
             qa_copy_mode: None,
             qa_focused: false,
             qa_screen: None,
@@ -697,6 +706,7 @@ mod tests {
         let pane_scrolled = TerminalPane {
             copy_mode: None,
             focused: true,
+            new_worktree_key: 'n',
             qa_copy_mode: None,
             qa_focused: false,
             qa_screen: None,
@@ -751,21 +761,21 @@ mod tests {
 
     #[test]
     fn enter_copy_mode_creates_state() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         pane.enter_copy_mode(false, 24, 80);
         assert!(pane.copy_mode.is_some());
     }
 
     #[test]
     fn enter_qa_copy_mode_creates_state() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         pane.enter_copy_mode(true, 24, 80);
         assert!(pane.qa_copy_mode.is_some());
     }
 
     #[test]
     fn exit_copy_mode_clears_state_and_scroll() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         pane.enter_copy_mode(false, 24, 80);
         pane.scroll_offset = 5;
         pane.exit_copy_mode(false);
@@ -775,7 +785,7 @@ mod tests {
 
     #[test]
     fn exit_qa_copy_mode_clears_state_and_scroll() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         pane.enter_copy_mode(true, 24, 80);
         pane.qa_scroll_offset = 5;
         pane.exit_copy_mode(true);
@@ -785,14 +795,14 @@ mod tests {
 
     #[test]
     fn is_in_copy_mode_false_by_default() {
-        let pane = TerminalPane::new();
+        let pane = TerminalPane::new('n', 50);
         assert!(!pane.is_in_copy_mode(false));
         assert!(!pane.is_in_copy_mode(true));
     }
 
     #[test]
     fn is_in_copy_mode_true_when_set() {
-        let mut pane = TerminalPane::new();
+        let mut pane = TerminalPane::new('n', 50);
         pane.enter_copy_mode(false, 24, 80);
         assert!(pane.is_in_copy_mode(false));
     }
@@ -808,6 +818,7 @@ mod tests {
         let pane = TerminalPane {
             copy_mode: Some(copy_state),
             focused: true,
+            new_worktree_key: 'n',
             qa_copy_mode: None,
             qa_focused: false,
             qa_screen: None,
