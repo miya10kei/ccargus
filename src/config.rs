@@ -3,6 +3,17 @@ use std::path::PathBuf;
 use color_eyre::Result;
 use serde::Deserialize;
 
+fn expand_tilde(path: PathBuf) -> PathBuf {
+    let s = path.to_string_lossy();
+    if s == "~" {
+        dirs::home_dir().unwrap_or(path)
+    } else if let Some(rest) = s.strip_prefix("~/") {
+        dirs::home_dir().map(|home| home.join(rest)).unwrap_or(path)
+    } else {
+        path
+    }
+}
+
 fn default_claude_command() -> String {
     "claude".to_owned()
 }
@@ -209,7 +220,8 @@ impl Config {
     }
 
     pub fn from_toml(content: &str) -> Result<Self> {
-        let config: Self = toml::from_str(content)?;
+        let mut config: Self = toml::from_str(content)?;
+        config.worktree.base_dir = expand_tilde(config.worktree.base_dir);
         Ok(config)
     }
 
@@ -290,6 +302,35 @@ command = "emacs"
         assert_eq!(config.editor.command, "vim");
         assert_eq!(config.keybindings.new_worktree, 'n');
         assert!(config.worktree.base_dir.ends_with("ccargus/worktrees"));
+    }
+
+    #[test]
+    fn expand_tilde_expands_home() {
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(expand_tilde(PathBuf::from("~")), home);
+        assert_eq!(
+            expand_tilde(PathBuf::from("~/some/path")),
+            home.join("some/path")
+        );
+    }
+
+    #[test]
+    fn expand_tilde_preserves_absolute_path() {
+        assert_eq!(
+            expand_tilde(PathBuf::from("/absolute/path")),
+            PathBuf::from("/absolute/path")
+        );
+    }
+
+    #[test]
+    fn from_toml_expands_tilde_in_base_dir() {
+        let toml = r#"
+[worktree]
+base_dir = "~/my/worktrees"
+"#;
+        let config = Config::from_toml(toml).unwrap();
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(config.worktree.base_dir, home.join("my/worktrees"));
     }
 
     #[test]
