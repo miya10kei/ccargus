@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use crate::app;
 use crate::components::terminal_pane::TerminalPane;
+use crate::context::AppContext;
 use crate::copy_mode::{CopyModeState, ScrollDirection};
 use crate::handler::scroll::scrollback_max;
 use crate::layout::terminal_half_page_size;
@@ -9,7 +9,7 @@ use crate::layout::terminal_half_page_size;
 /// Returns true if the key was handled as a copy mode action.
 #[allow(clippy::too_many_lines)]
 pub fn handle_copy_mode_key(
-    app: &app::App,
+    ctx: &mut AppContext,
     terminal_pane: &mut TerminalPane,
     key: crossterm::event::KeyEvent,
     qa: bool,
@@ -44,7 +44,7 @@ pub fn handle_copy_mode_key(
                 .copy_mode_mut(qa)
                 .and_then(CopyModeState::move_up);
             if let Some(ScrollDirection::Up) = scroll_dir {
-                let max = scrollback_max(app, qa);
+                let max = scrollback_max(&ctx.app, qa);
                 terminal_pane.scroll_up(qa, 1, max);
             }
         }
@@ -92,7 +92,7 @@ pub fn handle_copy_mode_key(
             }
         }
         KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let max = scrollback_max(app, qa);
+            let max = scrollback_max(&ctx.app, qa);
             terminal_pane.scroll_up(qa, terminal_half_page_size(), max);
         }
         KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -116,6 +116,10 @@ pub fn handle_copy_mode_key(
                 && !text.is_empty()
             {
                 let _ = CopyModeState::copy_to_clipboard(&text);
+                ctx.notify(
+                    format!("Copied {} chars", text.len()),
+                    crate::context::NotificationLevel::Info,
+                );
             }
             terminal_pane.exit_copy_mode(qa);
         }

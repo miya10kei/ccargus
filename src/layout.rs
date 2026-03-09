@@ -23,8 +23,14 @@ impl PtySizes {
     }
 }
 
-pub fn calculate_pty_sizes(term_cols: u16, term_rows: u16) -> PtySizes {
+pub fn calculate_pty_sizes(
+    term_cols: u16,
+    term_rows: u16,
+    worktree_pane_percent: u16,
+    qa_split_percent: u16,
+) -> PtySizes {
     let full = Rect::new(0, 0, term_cols, term_rows);
+    let terminal_percent = 100u16.saturating_sub(worktree_pane_percent);
 
     // Vertical: content area + status line
     let vertical = Layout::default()
@@ -32,10 +38,13 @@ pub fn calculate_pty_sizes(term_cols: u16, term_rows: u16) -> PtySizes {
         .constraints([Constraint::Min(3), Constraint::Length(1)])
         .split(full);
 
-    // Horizontal: worktree tree (25%) + terminal pane (75%)
+    // Horizontal: worktree tree + terminal pane
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
+        .constraints([
+            Constraint::Percentage(worktree_pane_percent),
+            Constraint::Percentage(terminal_percent),
+        ])
         .split(vertical[0]);
 
     let terminal_area = horizontal[1];
@@ -43,10 +52,14 @@ pub fn calculate_pty_sizes(term_cols: u16, term_rows: u16) -> PtySizes {
     // Single pane (no Q&A): terminal area with border
     let single_inner = Block::default().borders(Borders::ALL).inner(terminal_area);
 
-    // Split pane (Q&A): 50/50 horizontal split, each with border
+    // Split pane (Q&A): configurable split, each with border
+    let qa_main_percent = 100u16.saturating_sub(qa_split_percent);
     let split = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .constraints([
+            Constraint::Percentage(qa_main_percent),
+            Constraint::Percentage(qa_split_percent),
+        ])
         .split(terminal_area);
     let split_main_inner = Block::default().borders(Borders::ALL).inner(split[0]);
     let split_qa_inner = Block::default().borders(Borders::ALL).inner(split[1]);
@@ -63,7 +76,15 @@ pub fn calculate_pty_sizes(term_cols: u16, term_rows: u16) -> PtySizes {
 
 pub fn current_pty_sizes() -> PtySizes {
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-    calculate_pty_sizes(cols, rows)
+    calculate_pty_sizes(cols, rows, 25, 50)
+}
+
+pub fn current_pty_sizes_with_config(
+    worktree_pane_percent: u16,
+    qa_split_percent: u16,
+) -> PtySizes {
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    calculate_pty_sizes(cols, rows, worktree_pane_percent, qa_split_percent)
 }
 
 pub fn terminal_half_page_size() -> usize {

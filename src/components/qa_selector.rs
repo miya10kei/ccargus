@@ -1,11 +1,11 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState};
 
-use crate::action::Action;
 use crate::components::Component;
+use crate::components::utils::centered_rect_percent;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QaMode {
@@ -44,9 +44,9 @@ impl QaSelector {
 }
 
 impl Component for QaSelector {
-    fn handle_key_event(&mut self, key: KeyEvent) -> Action {
+    fn handle_key_event(&mut self, key: KeyEvent) {
         if !self.visible {
-            return Action::None;
+            return;
         }
 
         match key.code {
@@ -62,7 +62,7 @@ impl Component for QaSelector {
                 let mode = match self.list_state.selected() {
                     Some(0) => QaMode::Fork,
                     Some(1) => QaMode::New,
-                    _ => return Action::None,
+                    _ => return,
                 };
                 self.result = Some(mode);
                 self.visible = false;
@@ -70,7 +70,6 @@ impl Component for QaSelector {
             KeyCode::Esc => self.close(),
             _ => {}
         }
-        Action::None
     }
 
     fn render(&self, frame: &mut Frame, area: Rect) {
@@ -78,7 +77,7 @@ impl Component for QaSelector {
             return;
         }
 
-        let popup_area = centered_rect(40, 20, area);
+        let popup_area = centered_rect_percent(40, 20, area);
         frame.render_widget(Clear, popup_area);
 
         let items = vec![
@@ -98,26 +97,6 @@ impl Component for QaSelector {
         let mut state = self.list_state;
         frame.render_stateful_widget(list, popup_area, &mut state);
     }
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(area);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(vertical[1])[1]
 }
 
 #[cfg(test)]

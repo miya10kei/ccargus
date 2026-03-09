@@ -1,3 +1,5 @@
+use crossterm::event::MouseEventKind;
+
 use crate::app::Focus;
 use crate::context::{AppContext, UiContext};
 use crate::handler::scroll::scrollback_max;
@@ -8,7 +10,44 @@ pub fn handle_mouse_event(
     ui: &mut UiContext,
     mouse: crossterm::event::MouseEvent,
 ) {
-    use crossterm::event::MouseEventKind;
+    // Handle click-to-focus
+    if matches!(
+        mouse.kind,
+        MouseEventKind::Down(crossterm::event::MouseButton::Left)
+    ) && !ui.editor_float.visible
+        && !ui.repo_selector.visible
+        && !ui.qa_selector.visible
+        && !ui.confirm_dialog.visible
+        && !ui.help_overlay.visible
+    {
+        let col = mouse.column;
+        let row = mouse.row;
+
+        if let Some(wt_area) = ui.last_worktree_area
+            && wt_area.contains(ratatui::layout::Position::new(col, row))
+        {
+            ctx.app.focus = Focus::Worktrees;
+            return;
+        }
+
+        if let Some(term_area) = ui.last_terminal_area
+            && term_area.contains(ratatui::layout::Position::new(col, row))
+        {
+            // If Q&A pane is active, determine which half was clicked
+            if ui.terminal_pane.qa_screen.is_some() {
+                let mid_x =
+                    term_area.x + term_area.width * (100 - ui.terminal_pane.qa_split_percent) / 100;
+                if col >= mid_x {
+                    ctx.app.focus = Focus::QaTerminal;
+                } else {
+                    ctx.app.focus = Focus::Terminal;
+                }
+            } else {
+                ctx.app.focus = Focus::Terminal;
+            }
+            return;
+        }
+    }
 
     let is_scroll_wheel = matches!(
         mouse.kind,

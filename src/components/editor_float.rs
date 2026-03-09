@@ -1,11 +1,12 @@
 use std::sync::{Arc, Mutex};
 
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Clear};
 
 use crate::components::Component;
+use crate::components::utils::centered_rect_percent;
 use crate::domain::pty::PtySession;
 
 pub struct EditorFloat {
@@ -45,6 +46,14 @@ impl EditorFloat {
         self.pty.as_mut().is_some_and(PtySession::is_alive)
     }
 
+    pub fn resize(&mut self, rows: u16, cols: u16) {
+        let inner_rows = (rows * 80 / 100).saturating_sub(2);
+        let inner_cols = (cols * 80 / 100).saturating_sub(2);
+        if let Some(pty) = &self.pty {
+            let _ = pty.resize(inner_rows, inner_cols);
+        }
+    }
+
     pub fn open(
         &mut self,
         editor_command: &str,
@@ -80,7 +89,7 @@ impl Component for EditorFloat {
             return;
         }
 
-        let popup_area = centered_rect(80, 80, area);
+        let popup_area = centered_rect_percent(80, 80, area);
         frame.render_widget(Clear, popup_area);
 
         let block = Block::default()
@@ -104,26 +113,6 @@ impl Component for EditorFloat {
             );
         }
     }
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(area);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(vertical[1])[1]
 }
 
 #[cfg(test)]
@@ -154,16 +143,6 @@ mod tests {
         assert!(editor.visible);
         assert!(editor.screen().is_some());
         editor.close();
-    }
-
-    #[test]
-    fn centered_rect_produces_valid_area() {
-        let area = Rect::new(0, 0, 100, 50);
-        let popup = centered_rect(80, 80, area);
-        assert!(popup.width > 0);
-        assert!(popup.height > 0);
-        assert!(popup.x > 0);
-        assert!(popup.y > 0);
     }
 
     #[test]

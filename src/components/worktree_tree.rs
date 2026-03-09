@@ -36,14 +36,15 @@ impl WorktreeTree {
         }
     }
 
-    fn build_tree_items(&self) -> Vec<ListItem<'static>> {
+    fn build_tree_data(&self) -> (Vec<ListItem<'static>>, Option<usize>) {
         if self.worktrees.is_empty() {
-            return vec![ListItem::new("  (no worktrees)")];
+            return (vec![ListItem::new("  (no worktrees)")], None);
         }
 
         let groups = group_by_repo(&self.worktrees);
         let mut items = Vec::new();
         let mut flat_index = 0usize;
+        let mut selected_list_index = None;
 
         for (repo, entries) in &groups {
             items.push(ListItem::new(format!("\u{25bc} {repo}")));
@@ -60,34 +61,14 @@ impl WorktreeTree {
                     Span::styled(format!("  {marker} "), Style::default().fg(marker_color));
                 let branch_span = Span::styled(entry.branch.clone(), style);
                 items.push(ListItem::new(Line::from(vec![marker_span, branch_span])));
-                flat_index += 1;
-            }
-        }
-
-        items
-    }
-
-    fn selected_list_index(&self) -> Option<usize> {
-        if self.worktrees.is_empty() {
-            return None;
-        }
-
-        let groups = group_by_repo(&self.worktrees);
-        let mut list_index = 0usize;
-        let mut flat_index = 0usize;
-
-        for (_repo, entries) in &groups {
-            list_index += 1; // repo header row
-            for _entry in entries {
-                if flat_index == self.selected {
-                    return Some(list_index);
+                if is_selected {
+                    selected_list_index = Some(items.len() - 1);
                 }
-                list_index += 1;
                 flat_index += 1;
             }
         }
 
-        None
+        (items, selected_list_index)
     }
 }
 
@@ -107,19 +88,23 @@ pub fn group_by_repo(worktrees: &[WorktreeItem]) -> Vec<(String, Vec<&WorktreeIt
 
 impl Component for WorktreeTree {
     fn render(&self, frame: &mut Frame, area: Rect) {
-        let items = self.build_tree_items();
+        let (items, selected_list_index) = self.build_tree_data();
 
+        let mut border_style = Style::default().fg(self.border_color());
+        if self.focused {
+            border_style = border_style.add_modifier(Modifier::BOLD);
+        }
         let block = Block::default()
             .title(" Worktrees ")
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(self.border_color()));
+            .border_style(border_style);
 
         let list = List::new(items)
             .block(block)
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
         let mut state = ListState::default();
-        state.select(self.selected_list_index());
+        state.select(selected_list_index);
 
         frame.render_stateful_widget(list, area, &mut state);
     }
@@ -311,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_list_index_returns_correct_index() {
+    fn build_tree_data_returns_correct_selected_index() {
         let tree = WorktreeTree {
             focused: true,
             selected: 1, // second worktree
@@ -322,12 +307,14 @@ mod tests {
         };
         // repo header (index 0) + main (index 1) + dev (index 2)
         // selected=1 means "dev", so list_index should be 2
-        assert_eq!(tree.selected_list_index(), Some(2));
+        let (_items, selected_idx) = tree.build_tree_data();
+        assert_eq!(selected_idx, Some(2));
     }
 
     #[test]
-    fn selected_list_index_returns_none_when_empty() {
+    fn build_tree_data_returns_none_when_empty() {
         let tree = WorktreeTree::new();
-        assert!(tree.selected_list_index().is_none());
+        let (_items, selected_idx) = tree.build_tree_data();
+        assert!(selected_idx.is_none());
     }
 }

@@ -3,13 +3,14 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use crate::components::confirm_dialog::ConfirmAction;
 use crate::context::{AppContext, UiContext};
 use crate::domain;
-use crate::layout::current_pty_sizes;
+use crate::layout::current_pty_sizes_with_config;
 
 pub fn handle_worktrees_key(
     ctx: &mut AppContext,
     ui: &mut UiContext,
     key: crossterm::event::KeyEvent,
 ) {
+    let kb = &ctx.config.keybindings;
     match key.code {
         KeyCode::Char('q' | 'c')
             if key.code == KeyCode::Char('q') || key.modifiers.contains(KeyModifiers::CONTROL) =>
@@ -17,22 +18,27 @@ pub fn handle_worktrees_key(
             ui.confirm_dialog
                 .open("Quit ccargus?", ConfirmAction::QuitApp);
         }
-        KeyCode::Char('d') => {
+        KeyCode::Char(c) if c == kb.delete_worktree => {
             if let Some(wt) = ctx.app.worktree_pool.get(ctx.app.selected_worktree) {
                 let message = format!("Delete worktree '{}/{}'?", wt.repo, wt.branch);
                 ui.confirm_dialog
                     .open(message, ConfirmAction::DeleteWorktree);
             }
         }
-        KeyCode::Char('e') => {
+        KeyCode::Char(c) if c == kb.open_editor => {
             if let Some(wt) = ctx.app.worktree_pool.get(ctx.app.selected_worktree) {
                 let size = crossterm::terminal::size().unwrap_or((80, 24));
-                let _ = ui.editor_float.open(
+                if let Err(e) = ui.editor_float.open(
                     &ctx.config.editor.command,
                     &wt.working_dir(),
                     size.1,
                     size.0,
-                );
+                ) {
+                    ctx.notify(
+                        format!("Failed to open editor: {e}"),
+                        crate::context::NotificationLevel::Error,
+                    );
+                }
             }
         }
         KeyCode::Char('j') | KeyCode::Down => {
@@ -41,15 +47,18 @@ pub fn handle_worktrees_key(
         KeyCode::Char('k') | KeyCode::Up => {
             ctx.app.select_prev_worktree(ctx.app.worktree_pool.len());
         }
-        KeyCode::Char('n') => {
+        KeyCode::Char(c) if c == kb.new_worktree => {
             ui.repo_selector.open();
         }
-        KeyCode::Char('s') => {
+        KeyCode::Char(c) if c == kb.qa_worktree => {
             if let Some(wt) = ctx.app.worktree_pool.get(ctx.app.selected_worktree)
                 && wt.is_running()
             {
                 ui.qa_selector.open();
             }
+        }
+        KeyCode::Char('?') => {
+            ui.help_overlay.toggle();
         }
         KeyCode::Char('x') => {
             if let Some(wt) = ctx.app.worktree_pool.get_mut(ctx.app.selected_worktree) {
@@ -65,8 +74,21 @@ pub fn handle_worktrees_key(
                     ctx.app.toggle_focus(has_qa);
                 } else {
                     // Start stopped worktree
-                    let sizes = current_pty_sizes();
-                    let _ = wt.start(sizes.single_rows, sizes.single_cols, ctx.config.claude.plan);
+                    let sizes = current_pty_sizes_with_config(
+                        ctx.config.layout.worktree_pane_percent,
+                        ctx.config.layout.qa_split_percent,
+                    );
+                    if let Err(e) = wt.start(
+                        sizes.single_rows,
+                        sizes.single_cols,
+                        ctx.config.claude.plan,
+                        &ctx.config.claude.command,
+                    ) {
+                        ctx.notify(
+                            format!("Failed to start worktree: {e}"),
+                            crate::context::NotificationLevel::Error,
+                        );
+                    }
                     ctx.app.focus = crate::app::Focus::Terminal;
                 }
             }

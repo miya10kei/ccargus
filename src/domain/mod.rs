@@ -6,6 +6,5 @@ pub mod worktree;
 pub mod worktree_entry;
 pub mod worktree_manager;
 
-// Re-export for backward compatibility
 pub use git::{branch_exists, list_local_branches};
 pub use worktree_manager::WorktreeManager;

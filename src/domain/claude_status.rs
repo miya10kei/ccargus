@@ -61,9 +61,10 @@ impl StatusCache {
     pub fn new() -> Self {
         let runtime_dir =
             std::env::var("XDG_RUNTIME_DIR").map_or_else(|_| PathBuf::from("/tmp"), PathBuf::from);
+        let socket_name = format!("notify-{}.sock", std::process::id());
         Self {
             cache: HashMap::new(),
-            socket_path: runtime_dir.join("ccargus/notify.sock"),
+            socket_path: runtime_dir.join("ccargus").join(socket_name),
         }
     }
 

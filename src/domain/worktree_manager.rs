@@ -12,12 +12,16 @@ use super::worktree_entry::WorktreeEntry;
 
 pub struct WorktreeManager {
     base_dir: PathBuf,
+    protected_branches: Vec<String>,
 }
 
 impl WorktreeManager {
-    pub fn new(base_dir: PathBuf) -> Result<Self> {
+    pub fn new(base_dir: PathBuf, protected_branches: Vec<String>) -> Result<Self> {
         fs::create_dir_all(&base_dir)?;
-        Ok(Self { base_dir })
+        Ok(Self {
+            base_dir,
+            protected_branches,
+        })
     }
 
     pub fn add_worktree(
@@ -71,15 +75,13 @@ impl WorktreeManager {
     }
 
     pub fn remove_worktree(&self, entry: &WorktreeEntry) -> Result<()> {
-        const PROTECTED_BRANCHES: &[&str] = &["main", "master", "develop"];
-
         let worktree_path_str = entry.worktree_path.to_string_lossy();
         run_git(
             &entry.source_repo_path,
             &["worktree", "remove", "--force", &worktree_path_str],
             "git worktree remove",
         )?;
-        if !PROTECTED_BRANCHES.contains(&entry.branch.as_str()) {
+        if !self.protected_branches.iter().any(|b| b == &entry.branch) {
             let _ = run_git(
                 &entry.source_repo_path,
                 &["branch", "-D", &entry.branch],
@@ -219,14 +221,22 @@ mod tests {
         let base = tmp.path().join("worktrees");
         assert!(!base.exists());
 
-        let _manager = WorktreeManager::new(base.clone()).unwrap();
+        let _manager = WorktreeManager::new(
+            base.clone(),
+            vec!["main".into(), "master".into(), "develop".into()],
+        )
+        .unwrap();
         assert!(base.exists());
     }
 
     #[test]
     fn scan_empty_base_dir() {
         let tmp = tempfile::tempdir().unwrap();
-        let manager = WorktreeManager::new(tmp.path().join("worktrees")).unwrap();
+        let manager = WorktreeManager::new(
+            tmp.path().join("worktrees"),
+            vec!["main".into(), "master".into(), "develop".into()],
+        )
+        .unwrap();
         let entries = manager.scan().unwrap();
         assert!(entries.is_empty());
     }
@@ -235,7 +245,11 @@ mod tests {
     fn scan_discovers_valid_worktrees() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("worktrees");
-        let manager = WorktreeManager::new(base.clone()).unwrap();
+        let manager = WorktreeManager::new(
+            base.clone(),
+            vec!["main".into(), "master".into(), "develop".into()],
+        )
+        .unwrap();
 
         let repo_path = setup_test_repo(tmp.path());
         let repo = Repository {
@@ -262,7 +276,11 @@ mod tests {
     fn add_and_remove_worktree() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("worktrees");
-        let manager = WorktreeManager::new(base.clone()).unwrap();
+        let manager = WorktreeManager::new(
+            base.clone(),
+            vec!["main".into(), "master".into(), "develop".into()],
+        )
+        .unwrap();
 
         let repo_path = setup_test_repo(tmp.path());
         let repo = Repository {
@@ -295,7 +313,9 @@ mod tests {
     fn remove_worktree_preserves_protected_branches() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("worktrees");
-        let manager = WorktreeManager::new(base).unwrap();
+        let manager =
+            WorktreeManager::new(base, vec!["main".into(), "master".into(), "develop".into()])
+                .unwrap();
 
         let repo_path = setup_test_repo(tmp.path());
         let repo = Repository {
@@ -323,7 +343,9 @@ mod tests {
     fn add_duplicate_worktree_fails() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("worktrees");
-        let manager = WorktreeManager::new(base).unwrap();
+        let manager =
+            WorktreeManager::new(base, vec!["main".into(), "master".into(), "develop".into()])
+                .unwrap();
 
         let repo_path = setup_test_repo(tmp.path());
         let repo = Repository {
@@ -345,7 +367,11 @@ mod tests {
     #[test]
     fn repo_dir_uses_nested_structure() {
         let tmp = tempfile::tempdir().unwrap();
-        let manager = WorktreeManager::new(tmp.path().to_path_buf()).unwrap();
+        let manager = WorktreeManager::new(
+            tmp.path().to_path_buf(),
+            vec!["main".into(), "master".into(), "develop".into()],
+        )
+        .unwrap();
         let dir = manager.repo_dir("github.com/owner/repo");
         assert!(dir.ends_with("github.com/owner/repo"));
     }
@@ -354,7 +380,9 @@ mod tests {
     fn add_worktree_creates_new_branch() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("worktrees");
-        let manager = WorktreeManager::new(base).unwrap();
+        let manager =
+            WorktreeManager::new(base, vec!["main".into(), "master".into(), "develop".into()])
+                .unwrap();
 
         let repo_path = setup_test_repo(tmp.path());
         let repo = Repository {
@@ -378,7 +406,11 @@ mod tests {
     fn scan_ignores_non_git_directories() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("worktrees");
-        let manager = WorktreeManager::new(base.clone()).unwrap();
+        let manager = WorktreeManager::new(
+            base.clone(),
+            vec!["main".into(), "master".into(), "develop".into()],
+        )
+        .unwrap();
 
         // Create a directory structure that looks like a worktree but isn't
         let fake = base.join("github.com/test/repo/not-a-worktree");

@@ -46,12 +46,14 @@ pub fn list_repositories() -> Result<Vec<Repository>> {
 }
 
 /// Extract repository display name from full path.
-/// Looks for patterns like "github.com/owner/repo" in the path.
+/// Detects hostname-like components (containing a dot) in the path
+/// and returns everything from that component onwards.
 /// Falls back to the last 2 path components.
 fn extract_repo_name(path: &str) -> String {
-    for host in &["github.com", "gitlab.com", "bitbucket.org"] {
-        if let Some(idx) = path.find(host) {
-            return path[idx..].to_string();
+    let components: Vec<&str> = path.split('/').collect();
+    for (i, component) in components.iter().enumerate() {
+        if component.contains('.') && !component.starts_with('.') {
+            return components[i..].join("/");
         }
     }
     let parts: Vec<&str> = path.rsplit('/').take(2).collect();
@@ -84,6 +86,18 @@ mod tests {
     fn extract_repo_name_gitlab() {
         let name = extract_repo_name("/home/user/dev/ghq/gitlab.com/owner/repo");
         assert_eq!(name, "gitlab.com/owner/repo");
+    }
+
+    #[test]
+    fn extract_repo_name_custom_host() {
+        let name = extract_repo_name("/home/user/dev/ghq/git.example.com/team/project");
+        assert_eq!(name, "git.example.com/team/project");
+    }
+
+    #[test]
+    fn extract_repo_name_hidden_dir_ignored() {
+        let name = extract_repo_name("/home/user/.local/share/repos/owner/project");
+        assert_eq!(name, "owner/project");
     }
 
     #[test]

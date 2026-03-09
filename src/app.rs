@@ -16,7 +16,7 @@ pub enum Focus {
 }
 
 pub struct App {
-    pub state: AppState,
+    state: AppState,
     pub focus: Focus,
     pub selected_worktree: usize,
     pub worktree_pool: WorktreePool,

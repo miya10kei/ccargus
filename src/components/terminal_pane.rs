@@ -26,6 +26,7 @@ pub struct TerminalPane {
     pub qa_focused: bool,
     pub qa_screen: Option<Arc<Mutex<vt100::Parser>>>,
     pub qa_scroll_offset: usize,
+    pub qa_split_percent: u16,
     pub screen: Option<Arc<Mutex<vt100::Parser>>>,
     pub scroll_offset: usize,
 }
@@ -39,6 +40,7 @@ impl TerminalPane {
             qa_focused: false,
             qa_screen: None,
             qa_scroll_offset: 0,
+            qa_split_percent: 50,
             screen: None,
             scroll_offset: 0,
         }
@@ -124,7 +126,10 @@ impl TerminalPane {
         let pane_area = if self.qa_screen.is_some() {
             let split = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .constraints([
+                    Constraint::Percentage(100 - self.qa_split_percent),
+                    Constraint::Percentage(self.qa_split_percent),
+                ])
                 .split(terminal_area);
             if qa { split[1] } else { split[0] }
         } else {
@@ -189,18 +194,19 @@ impl TerminalPane {
         let title = if in_copy_mode {
             format!(" {label} [COPY] ")
         } else if scrolling {
-            format!(" {label} [SCROLL] ")
+            format!(" {label} [SCROLL +{scroll_offset}] ")
         } else {
             format!(" {label} ")
         };
+        let border_color = Self::border_color_for(focused, scrolling, in_copy_mode);
+        let mut border_style = Style::default().fg(border_color);
+        if focused {
+            border_style = border_style.add_modifier(ratatui::style::Modifier::BOLD);
+        }
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Self::border_color_for(
-                focused,
-                scrolling,
-                in_copy_mode,
-            )));
+            .border_style(border_style);
 
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -248,7 +254,10 @@ impl TerminalPane {
     fn render_split_pane(&self, frame: &mut Frame, area: Rect) {
         let horizontal = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .constraints([
+                Constraint::Percentage(100 - self.qa_split_percent),
+                Constraint::Percentage(self.qa_split_percent),
+            ])
             .split(area);
 
         Self::render_pane(
@@ -445,6 +454,7 @@ mod tests {
             qa_focused: false,
             qa_screen: None,
             qa_scroll_offset: 0,
+            qa_split_percent: 50,
             screen: Some(Arc::clone(&parser)),
             scroll_offset: 0,
         };
@@ -579,6 +589,7 @@ mod tests {
             qa_focused: false,
             qa_screen: None,
             qa_scroll_offset: 0,
+            qa_split_percent: 50,
             screen: Some(Arc::clone(&parser)),
             scroll_offset: 5,
         };
@@ -595,8 +606,8 @@ mod tests {
             text.push_str(buffer[(x, 0)].symbol());
         }
         assert!(
-            text.contains("[SCROLL]"),
-            "Should contain [SCROLL] indicator, got: {text}"
+            text.contains("[SCROLL +5]"),
+            "Should contain [SCROLL +5] indicator, got: {text}"
         );
     }
 
@@ -614,6 +625,7 @@ mod tests {
             qa_focused: false,
             qa_screen: None,
             qa_scroll_offset: 0,
+            qa_split_percent: 50,
             screen: Some(Arc::clone(&parser)),
             scroll_offset: 1,
         };
@@ -658,6 +670,7 @@ mod tests {
             qa_focused: false,
             qa_screen: None,
             qa_scroll_offset: 0,
+            qa_split_percent: 50,
             screen: Some(Arc::clone(&parser)),
             scroll_offset: 0,
         };
@@ -688,6 +701,7 @@ mod tests {
             qa_focused: false,
             qa_screen: None,
             qa_scroll_offset: 0,
+            qa_split_percent: 50,
             screen: Some(Arc::clone(&parser)),
             scroll_offset: 6,
         };
@@ -798,6 +812,7 @@ mod tests {
             qa_focused: false,
             qa_screen: None,
             qa_scroll_offset: 0,
+            qa_split_percent: 50,
             screen: Some(Arc::clone(&parser)),
             scroll_offset: 0,
         };

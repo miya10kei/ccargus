@@ -4,8 +4,8 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 
-use crate::action::Action;
 use crate::components::Component;
+use crate::components::utils::centered_rect_percent;
 use crate::domain::repo::{Repository, filter_repositories, list_repositories};
 use crate::domain::{branch_exists, list_local_branches};
 
@@ -84,9 +84,9 @@ impl RepoSelector {
     fn confirm_base_branch(&mut self) {
         let filtered = self.filtered_local_branches();
         if let Some(idx) = self.base_branch_list_state.selected()
-            && let Some(base) = filtered.get(idx)
+            && let Some(&base) = filtered.get(idx)
         {
-            let base = base.clone();
+            let base = base.to_owned();
             if let Some(repo) = &self.selected_repo {
                 self.result = Some(SelectionResult {
                     base_branch: Some(base),
@@ -122,15 +122,15 @@ impl RepoSelector {
         }
     }
 
-    fn filtered_local_branches(&self) -> Vec<String> {
+    fn filtered_local_branches(&self) -> Vec<&str> {
         if self.base_branch_filter.is_empty() {
-            return self.local_branches.clone();
+            return self.local_branches.iter().map(String::as_str).collect();
         }
         let query = self.base_branch_filter.to_lowercase();
         self.local_branches
             .iter()
             .filter(|b| b.to_lowercase().contains(&query))
-            .cloned()
+            .map(String::as_str)
             .collect()
     }
 
@@ -270,14 +270,6 @@ impl RepoSelector {
         frame.render_stateful_widget(list, layout[1], &mut state);
     }
 
-    fn active_filter(&self) -> &str {
-        match self.step {
-            SelectorStep::SelectBaseBranch => &self.base_branch_filter,
-            SelectorStep::SelectRepo => &self.filter_query,
-            SelectorStep::InputBranchName => "",
-        }
-    }
-
     fn select_repo(&mut self) {
         let filtered = self.filtered_repos();
         if let Some(idx) = self.repo_list_state.selected()
@@ -292,9 +284,9 @@ impl RepoSelector {
 }
 
 impl Component for RepoSelector {
-    fn handle_key_event(&mut self, key: KeyEvent) -> Action {
+    fn handle_key_event(&mut self, key: KeyEvent) {
         if !self.visible {
-            return Action::None;
+            return;
         }
 
         match key.code {
@@ -316,22 +308,6 @@ impl Component for RepoSelector {
             },
             KeyCode::Up => self.move_up(),
             KeyCode::Down => self.move_down(),
-            KeyCode::Char('k')
-                if matches!(
-                    self.step,
-                    SelectorStep::SelectRepo | SelectorStep::SelectBaseBranch
-                ) && self.active_filter().is_empty() =>
-            {
-                self.move_up();
-            }
-            KeyCode::Char('j')
-                if matches!(
-                    self.step,
-                    SelectorStep::SelectRepo | SelectorStep::SelectBaseBranch
-                ) && self.active_filter().is_empty() =>
-            {
-                self.move_down();
-            }
             KeyCode::Char(c) => match self.step {
                 SelectorStep::InputBranchName => {
                     self.branch_input.push(c);
@@ -360,7 +336,6 @@ impl Component for RepoSelector {
             },
             _ => {}
         }
-        Action::None
     }
 
     fn render(&self, frame: &mut Frame, area: Rect) {
@@ -368,7 +343,7 @@ impl Component for RepoSelector {
             return;
         }
 
-        let popup_area = centered_rect(60, 60, area);
+        let popup_area = centered_rect_percent(60, 60, area);
 
         frame.render_widget(Clear, popup_area);
 
@@ -377,42 +352,24 @@ impl Component for RepoSelector {
             SelectorStep::SelectBaseBranch => self.render_base_branch_selector(frame, popup_area),
             SelectorStep::SelectRepo => self.render_repo_list(frame, popup_area),
         }
+
+        // Set cursor position in input field
+        let input_len = match self.step {
+            SelectorStep::InputBranchName => self.branch_input.len(),
+            SelectorStep::SelectBaseBranch => self.base_branch_filter.len(),
+            SelectorStep::SelectRepo => self.filter_query.len(),
+        };
+        // inner area: popup_area x+1, y+1; prefix "  " = 2 chars
+        #[allow(clippy::cast_possible_truncation)]
+        let cursor_x = popup_area.x + 1 + 2 + input_len as u16;
+        let cursor_y = popup_area.y + 1;
+        frame.set_cursor_position(ratatui::layout::Position::new(cursor_x, cursor_y));
     }
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(area);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(vertical[1])[1]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn centered_rect_produces_valid_area() {
-        let area = Rect::new(0, 0, 100, 50);
-        let popup = centered_rect(60, 60, area);
-        assert!(popup.width > 0);
-        assert!(popup.height > 0);
-        assert!(popup.x > 0);
-        assert!(popup.y > 0);
-    }
 
     #[test]
     fn close_hides_selector() {

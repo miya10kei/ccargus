@@ -6,14 +6,14 @@ use crate::domain;
 use crate::handler::copy_mode::handle_copy_mode_key;
 use crate::handler::scroll::handle_scroll_key;
 use crate::keys::key_to_bytes;
-use crate::layout::current_pty_sizes;
+use crate::layout::current_pty_sizes_with_config;
 
 pub fn handle_qa_terminal_key(
     ctx: &mut AppContext,
     ui: &mut UiContext,
     key: crossterm::event::KeyEvent,
 ) {
-    if handle_copy_mode_key(&ctx.app, &mut ui.terminal_pane, key, true) {
+    if handle_copy_mode_key(ctx, &mut ui.terminal_pane, key, true) {
         return;
     }
 
@@ -41,7 +41,10 @@ pub fn handle_qa_terminal_key(
     if key.code == KeyCode::Char('d') && key.modifiers.contains(KeyModifiers::CONTROL) {
         if let Some(wt) = ctx.app.worktree_pool.get_mut(ctx.app.selected_worktree) {
             wt.close_qa();
-            let sizes = current_pty_sizes();
+            let sizes = current_pty_sizes_with_config(
+                ctx.config.layout.worktree_pane_percent,
+                ctx.config.layout.qa_split_percent,
+            );
             let (main_rows, main_cols) = sizes.main_size(false);
             wt.resize_pty(
                 main_rows,
@@ -68,7 +71,7 @@ pub fn handle_terminal_key(
     ui: &mut UiContext,
     key: crossterm::event::KeyEvent,
 ) {
-    if handle_copy_mode_key(&ctx.app, &mut ui.terminal_pane, key, false) {
+    if handle_copy_mode_key(ctx, &mut ui.terminal_pane, key, false) {
         return;
     }
 

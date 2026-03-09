@@ -67,19 +67,16 @@ pub fn handle_scroll_key(
             terminal_pane.scroll_down(qa, terminal_half_page_size() * 2);
         }
         KeyCode::Char('v') => {
-            let (_cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-            // Approximate viewport: terminal height minus borders and status line
-            let viewport_rows = usize::from(rows).saturating_sub(4);
-            let viewport_cols = 80; // Will be refined by actual render area
+            let sizes = crate::layout::current_pty_sizes();
+            let (rows, cols) = sizes.main_size(qa);
+            let viewport_rows = usize::from(rows);
+            let viewport_cols = usize::from(cols);
             terminal_pane.enter_copy_mode(qa, viewport_rows, viewport_cols);
         }
         KeyCode::Esc | KeyCode::Char('q') => {
             terminal_pane.exit_scroll(qa);
         }
-        _ => {
-            terminal_pane.exit_scroll(qa);
-            return false;
-        }
+        _ => {}
     }
     true
 }

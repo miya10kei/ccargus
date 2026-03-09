@@ -5,11 +5,19 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use crate::components::Component;
+use crate::context::NotificationLevel;
+
+#[derive(Debug, Clone)]
+pub struct StatusNotification {
+    pub level: NotificationLevel,
+    pub message: String,
+}
 
 pub struct StatusLine {
     pub branch: String,
     pub copy_hint: Option<String>,
     pub dir: String,
+    pub notification: Option<StatusNotification>,
     pub qa_mode: Option<String>,
     pub repo: String,
     pub status: String,
@@ -47,6 +55,17 @@ impl Component for StatusLine {
             ));
         }
 
+        if let Some(notif) = &self.notification {
+            let color = match notif.level {
+                NotificationLevel::Error => Color::Red,
+                NotificationLevel::Info => Color::Green,
+            };
+            spans.push(Span::styled(
+                format!(" {} ", notif.message),
+                Style::default().fg(color),
+            ));
+        }
+
         let line = Line::from(spans);
         let paragraph = Paragraph::new(line);
         frame.render_widget(paragraph, area);
@@ -68,6 +87,7 @@ mod tests {
             branch: "main".to_owned(),
             copy_hint: None,
             dir: "/home/user/project".to_owned(),
+            notification: None,
             qa_mode: None,
             repo: "miya10kei/ccargus".to_owned(),
             status: "running".to_owned(),
@@ -113,6 +133,7 @@ mod tests {
             branch: "feat".to_owned(),
             copy_hint: Some("[v] select".to_owned()),
             dir: "/home".to_owned(),
+            notification: None,
             qa_mode: Some("Fork".to_owned()),
             repo: "myrepo".to_owned(),
             status: "running".to_owned(),
@@ -132,6 +153,7 @@ mod tests {
             branch: "main".to_owned(),
             copy_hint: Some("[v] select".to_owned()),
             dir: String::new(),
+            notification: None,
             qa_mode: None,
             repo: "r".to_owned(),
             status: String::new(),
@@ -149,6 +171,7 @@ mod tests {
             branch: "main".to_owned(),
             copy_hint: None,
             dir: String::new(),
+            notification: None,
             qa_mode: Some("Fork".to_owned()),
             repo: "r".to_owned(),
             status: String::new(),
@@ -166,6 +189,7 @@ mod tests {
             branch: "main".to_owned(),
             copy_hint: None,
             dir: "/home/user/project".to_owned(),
+            notification: None,
             qa_mode: None,
             repo: "r".to_owned(),
             status: "processing".to_owned(),
