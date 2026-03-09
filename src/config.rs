@@ -159,13 +159,51 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
+        if self.claude.command.is_empty() {
+            return Err(color_eyre::eyre::eyre!("claude.command must not be empty"));
+        }
         if self.editor.command.is_empty() {
             return Err(color_eyre::eyre::eyre!("editor.command must not be empty"));
+        }
+        if !(1..=99).contains(&self.layout.worktree_pane_percent) {
+            return Err(color_eyre::eyre::eyre!(
+                "layout.worktree_pane_percent must be 1-99, got {}",
+                self.layout.worktree_pane_percent
+            ));
+        }
+        if !(1..=99).contains(&self.layout.qa_split_percent) {
+            return Err(color_eyre::eyre::eyre!(
+                "layout.qa_split_percent must be 1-99, got {}",
+                self.layout.qa_split_percent
+            ));
         }
         if self.worktree.base_dir.as_os_str().is_empty() {
             return Err(color_eyre::eyre::eyre!(
                 "worktree.base_dir must not be empty"
             ));
+        }
+        self.validate_keybindings()
+    }
+
+    fn validate_keybindings(&self) -> Result<()> {
+        let kb = &self.keybindings;
+        let bindings = [
+            ("delete_worktree", kb.delete_worktree),
+            ("new_worktree", kb.new_worktree),
+            ("open_editor", kb.open_editor),
+            ("qa_worktree", kb.qa_worktree),
+        ];
+        for i in 0..bindings.len() {
+            for j in (i + 1)..bindings.len() {
+                if bindings[i].1 == bindings[j].1 {
+                    return Err(color_eyre::eyre::eyre!(
+                        "Duplicate keybinding '{}': {} and {} use the same key",
+                        bindings[i].1,
+                        bindings[i].0,
+                        bindings[j].0,
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -258,5 +296,52 @@ command = "emacs"
     fn invalid_toml_returns_error() {
         let result = Config::from_toml("invalid = [[[");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_accepts_default_config() {
+        let config = Config::default();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_empty_claude_command() {
+        let mut config = Config::default();
+        config.claude.command = String::new();
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("claude.command must not be empty"));
+    }
+
+    #[test]
+    fn validate_rejects_zero_worktree_pane_percent() {
+        let mut config = Config::default();
+        config.layout.worktree_pane_percent = 0;
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("worktree_pane_percent must be 1-99"));
+    }
+
+    #[test]
+    fn validate_rejects_100_worktree_pane_percent() {
+        let mut config = Config::default();
+        config.layout.worktree_pane_percent = 100;
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("worktree_pane_percent must be 1-99"));
+    }
+
+    #[test]
+    fn validate_rejects_zero_qa_split_percent() {
+        let mut config = Config::default();
+        config.layout.qa_split_percent = 0;
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("qa_split_percent must be 1-99"));
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_keybindings() {
+        let mut config = Config::default();
+        config.keybindings.new_worktree = 'd';
+        config.keybindings.delete_worktree = 'd';
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("Duplicate keybinding"));
     }
 }
