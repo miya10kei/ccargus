@@ -95,21 +95,29 @@ impl Worktree {
         }
     }
 
-    pub fn start(&mut self, rows: u16, cols: u16, plan: bool, claude_command: &str) -> Result<()> {
+    pub fn start(
+        &mut self,
+        rows: u16,
+        cols: u16,
+        auto_continue: bool,
+        plan: bool,
+        claude_command: &str,
+    ) -> Result<()> {
         if self.pty.is_some() {
             return Ok(());
         }
         let working_dir = self.working_dir();
-        let pty = if plan {
-            PtySession::spawn_with_args(
-                claude_command,
-                &["--permission-mode", "plan"],
-                &working_dir,
-                rows,
-                cols,
-            )?
-        } else {
+        let mut args: Vec<&str> = Vec::new();
+        if auto_continue {
+            args.push("--continue");
+        }
+        if plan {
+            args.extend(["--permission-mode", "plan"]);
+        }
+        let pty = if args.is_empty() {
             PtySession::spawn(claude_command, &working_dir, rows, cols)?
+        } else {
+            PtySession::spawn_with_args(claude_command, &args, &working_dir, rows, cols)?
         };
         self.pty = Some(pty);
         Ok(())

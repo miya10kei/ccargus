@@ -123,6 +123,9 @@ fn expand_tilde(path: PathBuf) -> PathBuf {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
 fn default_claude_command() -> String {
     "claude".to_owned()
 }
@@ -175,6 +178,8 @@ fn default_worktree_base_dir() -> PathBuf {
 
 #[derive(Debug, Deserialize)]
 pub struct ClaudeConfig {
+    #[serde(default = "default_true")]
+    pub auto_continue: bool,
     #[serde(default = "default_claude_command")]
     pub command: String,
     #[serde(default)]
@@ -184,6 +189,7 @@ pub struct ClaudeConfig {
 impl Default for ClaudeConfig {
     fn default() -> Self {
         Self {
+            auto_continue: true,
             command: default_claude_command(),
             plan: false,
         }
@@ -529,6 +535,7 @@ mod tests {
     #[test]
     fn default_values_are_correct() {
         let config = Config::default();
+        assert!(config.claude.auto_continue);
         assert!(!config.claude.plan);
         assert_eq!(config.editor.command, "vim");
         assert_eq!(
@@ -547,6 +554,7 @@ mod tests {
     fn full_toml_deserialization() {
         let toml = r#"
 [claude]
+auto_continue = false
 plan = true
 
 [editor]
@@ -566,6 +574,7 @@ terminal_open_editor = "<C-o>"
 base_dir = "/custom/worktrees"
 "#;
         let config = Config::from_toml(toml).unwrap();
+        assert!(!config.claude.auto_continue);
         assert!(config.claude.plan);
         assert_eq!(config.editor.command, "nvim");
         assert_eq!(
@@ -607,6 +616,7 @@ terminal_open_editor = "<C-A-e>"
 command = "emacs"
 "#;
         let config = Config::from_toml(toml).unwrap();
+        assert!(config.claude.auto_continue);
         assert!(!config.claude.plan);
         assert_eq!(config.editor.command, "emacs");
         assert_eq!(
@@ -624,6 +634,7 @@ command = "emacs"
     #[test]
     fn empty_toml_returns_defaults() {
         let config = Config::from_toml("").unwrap();
+        assert!(config.claude.auto_continue);
         assert!(!config.claude.plan);
         assert_eq!(config.editor.command, "vim");
         assert_eq!(config.keybindings.new_worktree, kb('n'));
