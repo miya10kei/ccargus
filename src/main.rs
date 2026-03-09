@@ -211,7 +211,7 @@ fn handle_key_press(
                 Ok(entry) => {
                     let mut wt = domain::worktree::Worktree::from_entry(&entry);
                     let sizes = current_pty_sizes();
-                    let _ = wt.start(sizes.single_rows, sizes.single_cols);
+                    let _ = wt.start(sizes.single_rows, sizes.single_cols, config.claude.plan);
                     app.worktree_pool.add(wt);
                     app.selected_worktree = app.worktree_pool.len().saturating_sub(1);
                     app.focus = Focus::Terminal;
@@ -709,7 +709,7 @@ fn handle_worktrees_key(
                 } else {
                     // Start stopped worktree
                     let sizes = current_pty_sizes();
-                    let _ = wt.start(sizes.single_rows, sizes.single_cols);
+                    let _ = wt.start(sizes.single_rows, sizes.single_cols, config.claude.plan);
                     app.focus = Focus::Terminal;
                 }
             }

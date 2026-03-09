@@ -27,7 +27,16 @@ fn default_worktree_base_dir() -> PathBuf {
 
 #[allow(dead_code)]
 #[derive(Debug, Default, Deserialize)]
+pub struct ClaudeConfig {
+    #[serde(default)]
+    pub plan: bool,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Default, Deserialize)]
 pub struct Config {
+    #[serde(default)]
+    pub claude: ClaudeConfig,
     #[serde(default)]
     pub editor: EditorConfig,
     #[serde(default)]
@@ -119,6 +128,7 @@ mod tests {
     #[test]
     fn default_values_are_correct() {
         let config = Config::default();
+        assert!(!config.claude.plan);
         assert_eq!(config.editor.command, "vim");
         assert_eq!(config.keybindings.new_worktree, 'n');
         assert_eq!(config.keybindings.delete_worktree, 'd');
@@ -130,6 +140,9 @@ mod tests {
     #[test]
     fn full_toml_deserialization() {
         let toml = r#"
+[claude]
+plan = true
+
 [editor]
 command = "nvim"
 
@@ -143,6 +156,7 @@ qa_worktree = "q"
 base_dir = "/custom/worktrees"
 "#;
         let config = Config::from_toml(toml).unwrap();
+        assert!(config.claude.plan);
         assert_eq!(config.editor.command, "nvim");
         assert_eq!(config.keybindings.new_worktree, 'a');
         assert_eq!(config.keybindings.delete_worktree, 'x');
@@ -158,6 +172,7 @@ base_dir = "/custom/worktrees"
 command = "emacs"
 "#;
         let config = Config::from_toml(toml).unwrap();
+        assert!(!config.claude.plan);
         assert_eq!(config.editor.command, "emacs");
         assert_eq!(config.keybindings.new_worktree, 'n');
         assert_eq!(config.keybindings.delete_worktree, 'd');
@@ -169,6 +184,7 @@ command = "emacs"
     #[test]
     fn empty_toml_returns_defaults() {
         let config = Config::from_toml("").unwrap();
+        assert!(!config.claude.plan);
         assert_eq!(config.editor.command, "vim");
         assert_eq!(config.keybindings.new_worktree, 'n');
         assert!(config.worktree.base_dir.ends_with("ccargus/worktrees"));
