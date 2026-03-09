@@ -536,4 +536,80 @@ mod tests {
         assert_eq!(selector.step, SelectorStep::SelectBaseBranch);
         assert!(!selector.local_branches.is_empty());
     }
+
+    #[test]
+    fn backspace_removes_char_from_branch_input() {
+        let mut selector = RepoSelector::new();
+        selector.visible = true;
+        selector.step = SelectorStep::InputBranchName;
+        selector.branch_input = "abc".to_string();
+
+        let key = KeyEvent::new(KeyCode::Backspace, crossterm::event::KeyModifiers::NONE);
+        selector.handle_key_event(key);
+        assert_eq!(selector.branch_input, "ab");
+    }
+
+    #[test]
+    fn char_input_appends_to_filter_query() {
+        let mut selector = RepoSelector::new();
+        selector.visible = true;
+        selector.step = SelectorStep::SelectRepo;
+
+        let key = KeyEvent::new(KeyCode::Char('a'), crossterm::event::KeyModifiers::NONE);
+        selector.handle_key_event(key);
+        assert_eq!(selector.filter_query, "a");
+
+        let key = KeyEvent::new(KeyCode::Char('b'), crossterm::event::KeyModifiers::NONE);
+        selector.handle_key_event(key);
+        assert_eq!(selector.filter_query, "ab");
+    }
+
+    #[test]
+    fn esc_from_base_branch_goes_back_to_branch_input() {
+        let mut selector = RepoSelector::new();
+        selector.visible = true;
+        selector.step = SelectorStep::SelectBaseBranch;
+
+        let key = KeyEvent::new(KeyCode::Esc, crossterm::event::KeyModifiers::NONE);
+        selector.handle_key_event(key);
+        assert_eq!(selector.step, SelectorStep::InputBranchName);
+        assert!(selector.visible);
+    }
+
+    #[test]
+    fn esc_from_branch_input_goes_back_to_repo_select() {
+        let mut selector = RepoSelector::new();
+        selector.visible = true;
+        selector.step = SelectorStep::InputBranchName;
+
+        let key = KeyEvent::new(KeyCode::Esc, crossterm::event::KeyModifiers::NONE);
+        selector.handle_key_event(key);
+        assert_eq!(selector.step, SelectorStep::SelectRepo);
+        assert!(selector.visible);
+    }
+
+    #[test]
+    fn esc_from_repo_select_closes() {
+        let mut selector = RepoSelector::new();
+        selector.visible = true;
+        selector.step = SelectorStep::SelectRepo;
+
+        let key = KeyEvent::new(KeyCode::Esc, crossterm::event::KeyModifiers::NONE);
+        selector.handle_key_event(key);
+        assert!(!selector.visible);
+    }
+
+    #[test]
+    fn filtered_local_branches_filters() {
+        let mut selector = RepoSelector::new();
+        selector.local_branches = vec![
+            "main".to_string(),
+            "develop".to_string(),
+            "feature-abc".to_string(),
+        ];
+        selector.base_branch_filter = "dev".to_string();
+        let filtered = selector.filtered_local_branches();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0], "develop");
+    }
 }

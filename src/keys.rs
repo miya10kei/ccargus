@@ -422,4 +422,65 @@ mod tests {
         let result = mouse_to_bytes(event);
         assert_eq!(result, b"\x1b[<65;1;1M");
     }
+
+    fn make_mouse(
+        kind: crossterm::event::MouseEventKind,
+        col: u16,
+        row: u16,
+    ) -> crossterm::event::MouseEvent {
+        crossterm::event::MouseEvent {
+            kind,
+            column: col,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn char_multibyte_utf8() {
+        let result = key_to_bytes(make_key(KeyCode::Char('é'), KeyModifiers::NONE));
+        assert_eq!(result, "é".as_bytes());
+    }
+
+    #[test]
+    fn mouse_drag_returns_sgr_with_offset() {
+        use crossterm::event::{MouseButton, MouseEventKind};
+        let event = make_mouse(MouseEventKind::Drag(MouseButton::Left), 5, 3);
+        let result = mouse_to_bytes(event);
+        // button_code(Left, 32) = 32, col+1=6, row+1=4
+        assert_eq!(result, b"\x1b[<32;6;4M");
+    }
+
+    #[test]
+    fn mouse_left_down_returns_sgr_press() {
+        use crossterm::event::{MouseButton, MouseEventKind};
+        let event = make_mouse(MouseEventKind::Down(MouseButton::Left), 0, 0);
+        let result = mouse_to_bytes(event);
+        assert_eq!(result, b"\x1b[<0;1;1M");
+    }
+
+    #[test]
+    fn mouse_left_up_returns_sgr_release() {
+        use crossterm::event::{MouseButton, MouseEventKind};
+        let event = make_mouse(MouseEventKind::Up(MouseButton::Left), 0, 0);
+        let result = mouse_to_bytes(event);
+        assert_eq!(result, b"\x1b[<0;1;1m");
+    }
+
+    #[test]
+    fn mouse_moved_returns_empty() {
+        use crossterm::event::MouseEventKind;
+        let event = make_mouse(MouseEventKind::Moved, 5, 5);
+        let result = mouse_to_bytes(event);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn mouse_right_down_returns_sgr_press() {
+        use crossterm::event::{MouseButton, MouseEventKind};
+        let event = make_mouse(MouseEventKind::Down(MouseButton::Right), 10, 5);
+        let result = mouse_to_bytes(event);
+        // button_code(Right, 0) = 2, col+1=11, row+1=6
+        assert_eq!(result, b"\x1b[<2;11;6M");
+    }
 }

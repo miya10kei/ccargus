@@ -92,4 +92,92 @@ mod tests {
             "Should contain branch name, got: {text}"
         );
     }
+
+    fn render_status_line(status: &StatusLine, width: u16) -> String {
+        let backend = TestBackend::new(width, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                status.render(frame, frame.area());
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        (0..width)
+            .map(|x| buffer[(x, 0)].symbol().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn renders_all_fields() {
+        let status = StatusLine {
+            branch: "feat".to_owned(),
+            copy_hint: Some("[v] select".to_owned()),
+            dir: "/home".to_owned(),
+            qa_mode: Some("Fork".to_owned()),
+            repo: "myrepo".to_owned(),
+            status: "running".to_owned(),
+        };
+        let text = render_status_line(&status, 120);
+        assert!(text.contains("myrepo"), "got: {text}");
+        assert!(text.contains("feat"), "got: {text}");
+        assert!(text.contains("/home"), "got: {text}");
+        assert!(text.contains("running"), "got: {text}");
+        assert!(text.contains("Q&A: Fork"), "got: {text}");
+        assert!(text.contains("[v] select"), "got: {text}");
+    }
+
+    #[test]
+    fn renders_copy_hint_when_present() {
+        let status = StatusLine {
+            branch: "main".to_owned(),
+            copy_hint: Some("[v] select".to_owned()),
+            dir: String::new(),
+            qa_mode: None,
+            repo: "r".to_owned(),
+            status: String::new(),
+        };
+        let text = render_status_line(&status, 80);
+        assert!(
+            text.contains("[v] select"),
+            "Should contain copy hint, got: {text}"
+        );
+    }
+
+    #[test]
+    fn renders_qa_mode_when_present() {
+        let status = StatusLine {
+            branch: "main".to_owned(),
+            copy_hint: None,
+            dir: String::new(),
+            qa_mode: Some("Fork".to_owned()),
+            repo: "r".to_owned(),
+            status: String::new(),
+        };
+        let text = render_status_line(&status, 80);
+        assert!(
+            text.contains("Q&A: Fork"),
+            "Should contain Q&A mode, got: {text}"
+        );
+    }
+
+    #[test]
+    fn renders_status_and_dir() {
+        let status = StatusLine {
+            branch: "main".to_owned(),
+            copy_hint: None,
+            dir: "/home/user/project".to_owned(),
+            qa_mode: None,
+            repo: "r".to_owned(),
+            status: "processing".to_owned(),
+        };
+        let text = render_status_line(&status, 80);
+        assert!(
+            text.contains("/home/user/project"),
+            "Should contain dir, got: {text}"
+        );
+        assert!(
+            text.contains("processing"),
+            "Should contain status, got: {text}"
+        );
+    }
 }

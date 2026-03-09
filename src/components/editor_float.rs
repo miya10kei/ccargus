@@ -165,4 +165,34 @@ mod tests {
         assert!(popup.x > 0);
         assert!(popup.y > 0);
     }
+
+    #[test]
+    fn clear_dirty_when_no_pty_is_noop() {
+        let editor = EditorFloat::new();
+        editor.clear_dirty(); // should not panic
+    }
+
+    #[test]
+    fn is_dirty_false_when_no_pty() {
+        let editor = EditorFloat::new();
+        assert!(!editor.is_dirty());
+    }
+
+    #[test]
+    fn is_process_alive_when_no_pty() {
+        let mut editor = EditorFloat::new();
+        assert!(!editor.is_process_alive());
+    }
+
+    #[test]
+    fn screen_returns_none_when_no_pty() {
+        let editor = EditorFloat::new();
+        assert!(editor.screen().is_none());
+    }
+
+    #[test]
+    fn write_when_no_pty_returns_ok() {
+        let mut editor = EditorFloat::new();
+        assert!(editor.write(b"hello").is_ok());
+    }
 }

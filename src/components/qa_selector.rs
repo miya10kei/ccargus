@@ -189,4 +189,23 @@ mod tests {
         assert!(!selector.visible);
         assert!(selector.take_result().is_none());
     }
+
+    #[test]
+    fn navigation_clamps_at_boundaries() {
+        let mut selector = QaSelector::new();
+        selector.open();
+        // Move up from 0 should stay at 0
+        let up = KeyEvent::new(KeyCode::Up, crossterm::event::KeyModifiers::NONE);
+        selector.handle_key_event(up);
+        assert_eq!(selector.list_state.selected(), Some(0));
+
+        // Move down to 1
+        let down = KeyEvent::new(KeyCode::Down, crossterm::event::KeyModifiers::NONE);
+        selector.handle_key_event(down);
+        assert_eq!(selector.list_state.selected(), Some(1));
+
+        // Move down again should clamp at 1
+        selector.handle_key_event(down);
+        assert_eq!(selector.list_state.selected(), Some(1));
+    }
 }

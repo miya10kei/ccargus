@@ -138,4 +138,10 @@ mod tests {
         let filtered = filter_repositories(&repos, "xyz");
         assert!(filtered.is_empty());
     }
+
+    #[test]
+    fn extract_repo_name_single_component() {
+        let name = extract_repo_name("/repo");
+        assert_eq!(name, "/repo");
+    }
 }

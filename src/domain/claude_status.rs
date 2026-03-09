@@ -246,4 +246,12 @@ mod tests {
             "waiting for permission"
         );
     }
+
+    #[test]
+    fn color_returns_correct_values() {
+        assert_eq!(ClaudeStatus::Processing.color(), Color::Yellow);
+        assert_eq!(ClaudeStatus::Stopped.color(), Color::DarkGray);
+        assert_eq!(ClaudeStatus::WaitingForInput.color(), Color::Green);
+        assert_eq!(ClaudeStatus::WaitingForPermission.color(), Color::Red);
+    }
 }

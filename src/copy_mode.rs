@@ -436,4 +436,55 @@ mod tests {
         assert!(text.contains("Line 2"));
         assert!(text.contains("Line 3"));
     }
+
+    #[test]
+    fn is_selected_no_anchor_returns_false() {
+        let state = make_state(24, 80);
+        assert!(!state.is_selected(0, 0));
+        assert!(!state.is_selected(5, 10));
+    }
+
+    #[test]
+    fn move_word_backward_finds_previous_word() {
+        let mut parser = vt100::Parser::new(1, 20, 0);
+        parser.process(b"hello world");
+        let screen = parser.screen().clone();
+
+        let mut state = make_state(1, 20);
+        state.cursor.col = 10; // end of "world"
+        state.move_word_backward(&screen, 0);
+        assert_eq!(state.cursor.col, 6); // start of "world"
+    }
+
+    #[test]
+    fn move_word_forward_skips_to_next_word() {
+        let mut parser = vt100::Parser::new(1, 20, 0);
+        parser.process(b"hello world");
+        let screen = parser.screen().clone();
+
+        let mut state = make_state(1, 20);
+        state.cursor.col = 0;
+        state.move_word_forward(&screen, 0);
+        assert_eq!(state.cursor.col, 6); // start of "world"
+    }
+
+    #[test]
+    fn unicode_display_width_ascii() {
+        assert_eq!(unicode_display_width("hello"), 5);
+    }
+
+    #[test]
+    fn unicode_display_width_cjk() {
+        assert_eq!(unicode_display_width("世界"), 4);
+    }
+
+    #[test]
+    fn unicode_display_width_empty() {
+        assert_eq!(unicode_display_width(""), 0);
+    }
+
+    #[test]
+    fn unicode_display_width_mixed() {
+        assert_eq!(unicode_display_width("hi世"), 4);
+    }
 }
