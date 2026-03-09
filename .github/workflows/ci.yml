@@ -22,7 +22,9 @@ jobs:
       - name: Check Rust formatting
         run: cargo fmt --check
       - name: Install taplo
-        run: cargo install taplo-cli --locked
+        uses: taiki-e/install-action@v2
+        with:
+          tool: taplo-cli
       - name: Check TOML formatting
         run: taplo check
 
