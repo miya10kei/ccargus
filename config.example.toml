@@ -6,6 +6,8 @@
 # Claude Code 連携
 # ---------------------------------------------------------------------------
 [claude]
+# 最新セッションを自動再開するか (--continue フラグ)
+auto_continue = true
 # Claude Code の実行コマンド
 command = "claude"
 # planning mode で起動するか
