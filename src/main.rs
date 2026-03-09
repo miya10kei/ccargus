@@ -29,6 +29,7 @@ mod keys;
 mod tui;
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() -> Result<()> {
     color_eyre::install()?;
 
@@ -131,6 +132,16 @@ async fn main() -> Result<()> {
                     qa_selector.render(frame, frame.area());
                     confirm_dialog.render(frame, frame.area());
                     editor_float.render(frame, frame.area());
+
+                    // Show cursor at IME position when no overlay is active
+                    if !editor_float.visible
+                        && !repo_selector.visible
+                        && !qa_selector.visible
+                        && !confirm_dialog.visible
+                        && let Some((x, y)) = terminal_pane.cursor_position_for_ime(horizontal[1])
+                    {
+                        frame.set_cursor_position(ratatui::layout::Position::new(x, y));
+                    }
                 })?;
             }
             _ => {}

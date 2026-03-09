@@ -95,6 +95,52 @@ impl TerminalPane {
         *self.scroll_offset_mut(qa) = 0;
     }
 
+    /// Returns the vt100 cursor position mapped to screen coordinates for
+    /// the focused pane. Called after `tui.draw()` to send `cursor::MoveTo`
+    /// so the terminal emulator positions the (hidden) cursor for IME.
+    pub fn cursor_position_for_ime(&self, terminal_area: Rect) -> Option<(u16, u16)> {
+        let is_qa = self.qa_focused;
+        let focused = if is_qa { self.qa_focused } else { self.focused };
+        if !focused {
+            return None;
+        }
+        let qa = is_qa;
+        if self.scroll_offset_for(qa) > 0 || self.is_in_copy_mode(qa) {
+            return None;
+        }
+
+        let screen = if qa {
+            self.qa_screen.as_ref()
+        } else {
+            self.screen.as_ref()
+        };
+
+        let parser_arc = screen?;
+        let parser = parser_arc.lock().ok()?;
+        let vt_screen = parser.screen();
+        let (cursor_row, cursor_col) = vt_screen.cursor_position();
+
+        // Calculate inner area matching render_pane's block.inner(area)
+        let pane_area = if self.qa_screen.is_some() {
+            let split = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(terminal_area);
+            if qa { split[1] } else { split[0] }
+        } else {
+            terminal_area
+        };
+        let inner = Block::default().borders(Borders::ALL).inner(pane_area);
+
+        let x = inner.x + cursor_col;
+        let y = inner.y + cursor_row;
+        if x < inner.right() && y < inner.bottom() {
+            Some((x, y))
+        } else {
+            None
+        }
+    }
+
     pub fn is_in_copy_mode(&self, qa: bool) -> bool {
         self.copy_mode_for(qa).is_some()
     }
