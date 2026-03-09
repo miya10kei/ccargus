@@ -19,14 +19,14 @@ pub fn handle_worktrees_key(
                 .open("Quit ccargus?", ConfirmAction::QuitApp);
         }
         KeyCode::Char(c) if c == kb.delete_worktree => {
-            if let Some(wt) = ctx.app.worktree_pool.get(ctx.app.selected_worktree) {
+            if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree) {
                 let message = format!("Delete worktree '{}/{}'?", wt.repo, wt.branch);
                 ui.confirm_dialog
                     .open(message, ConfirmAction::DeleteWorktree);
             }
         }
         KeyCode::Char(c) if c == kb.open_editor => {
-            if let Some(wt) = ctx.app.worktree_pool.get(ctx.app.selected_worktree) {
+            if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree) {
                 let size = crossterm::terminal::size().unwrap_or((80, 24));
                 if let Err(e) = ui.editor_float.open(
                     &ctx.config.editor.command,
@@ -42,16 +42,16 @@ pub fn handle_worktrees_key(
             }
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            ctx.app.select_next_worktree(ctx.app.worktree_pool.len());
+            ctx.app.select_next_worktree(ctx.worktree_pool.len());
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            ctx.app.select_prev_worktree(ctx.app.worktree_pool.len());
+            ctx.app.select_prev_worktree(ctx.worktree_pool.len());
         }
         KeyCode::Char(c) if c == kb.new_worktree => {
             ui.repo_selector.open();
         }
         KeyCode::Char(c) if c == kb.qa_worktree => {
-            if let Some(wt) = ctx.app.worktree_pool.get(ctx.app.selected_worktree)
+            if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree)
                 && wt.is_running()
             {
                 ui.qa_selector.open();
@@ -61,13 +61,13 @@ pub fn handle_worktrees_key(
             ui.help_overlay.toggle();
         }
         KeyCode::Char('x') => {
-            if let Some(wt) = ctx.app.worktree_pool.get_mut(ctx.app.selected_worktree) {
+            if let Some(wt) = ctx.worktree_pool.get_mut(ctx.app.selected_worktree) {
                 ctx.status_cache.cleanup(&wt.working_dir());
                 wt.stop();
             }
         }
         KeyCode::Enter => {
-            if let Some(wt) = ctx.app.worktree_pool.get_mut(ctx.app.selected_worktree) {
+            if let Some(wt) = ctx.worktree_pool.get_mut(ctx.app.selected_worktree) {
                 if wt.is_running() {
                     // Focus into running worktree
                     let has_qa = wt.has_qa();
@@ -94,9 +94,8 @@ pub fn handle_worktrees_key(
             }
         }
         KeyCode::Tab => {
-            if !ctx.app.worktree_pool.is_empty() {
+            if !ctx.worktree_pool.is_empty() {
                 let has_qa = ctx
-                    .app
                     .worktree_pool
                     .get(ctx.app.selected_worktree)
                     .is_some_and(domain::worktree::Worktree::has_qa);

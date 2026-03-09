@@ -1,5 +1,3 @@
-use crate::domain::worktree::WorktreePool;
-
 #[derive(Debug, Default, PartialEq, Eq)]
 pub enum AppState {
     #[default]
@@ -19,7 +17,6 @@ pub struct App {
     state: AppState,
     pub focus: Focus,
     pub selected_worktree: usize,
-    pub worktree_pool: WorktreePool,
 }
 
 impl App {
@@ -32,7 +29,6 @@ impl App {
             state: AppState::default(),
             focus: Focus::default(),
             selected_worktree: 0,
-            worktree_pool: WorktreePool::new(),
         }
     }
 

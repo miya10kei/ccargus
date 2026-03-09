@@ -1,12 +1,12 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use crate::app;
 use crate::components::terminal_pane::TerminalPane;
+use crate::domain::worktree::WorktreePool;
 use crate::layout::terminal_half_page_size;
 
-pub fn scrollback_max(app: &app::App, qa: bool) -> usize {
-    app.worktree_pool
-        .get(app.selected_worktree)
+pub fn scrollback_max(worktree_pool: &WorktreePool, selected: usize, qa: bool) -> usize {
+    worktree_pool
+        .get(selected)
         .and_then(|wt| {
             let pty = if qa {
                 wt.qa_pty.as_ref()
@@ -29,14 +29,15 @@ pub fn scrollback_max(app: &app::App, qa: bool) -> usize {
 
 /// Returns true if the key was handled as a scroll action.
 pub fn handle_scroll_key(
-    app: &app::App,
+    worktree_pool: &WorktreePool,
+    selected: usize,
     terminal_pane: &mut TerminalPane,
     key: crossterm::event::KeyEvent,
     qa: bool,
 ) -> bool {
     // Ctrl+b: enter/continue scroll mode (half page up)
     if key.code == KeyCode::Char('b') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        let max = scrollback_max(app, qa);
+        let max = scrollback_max(worktree_pool, selected, qa);
         terminal_pane.scroll_up(qa, terminal_half_page_size(), max);
         return true;
     }
@@ -53,14 +54,14 @@ pub fn handle_scroll_key(
 
     match key.code {
         KeyCode::Up | KeyCode::Char('k') => {
-            let max = scrollback_max(app, qa);
+            let max = scrollback_max(worktree_pool, selected, qa);
             terminal_pane.scroll_up(qa, 1, max);
         }
         KeyCode::Down | KeyCode::Char('j') => {
             terminal_pane.scroll_down(qa, 1);
         }
         KeyCode::PageUp => {
-            let max = scrollback_max(app, qa);
+            let max = scrollback_max(worktree_pool, selected, qa);
             terminal_pane.scroll_up(qa, terminal_half_page_size() * 2, max);
         }
         KeyCode::PageDown => {

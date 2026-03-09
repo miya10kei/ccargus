@@ -11,6 +11,7 @@ use crate::components::worktree_tree::WorktreeTree;
 use crate::config::Config;
 use crate::domain::WorktreeManager;
 use crate::domain::claude_status::StatusCache;
+use crate::domain::worktree::WorktreePool;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotificationLevel {
@@ -33,6 +34,7 @@ pub struct AppContext {
     pub notification: Option<Notification>,
     pub status_cache: StatusCache,
     pub worktree_manager: WorktreeManager,
+    pub worktree_pool: WorktreePool,
 }
 
 impl AppContext {
