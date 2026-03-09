@@ -5,7 +5,6 @@ use crossterm::event::{EventStream, KeyEvent, MouseEvent};
 use futures::StreamExt;
 use tokio::sync::mpsc;
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub enum Event {
     Error,
@@ -19,8 +18,8 @@ pub enum Event {
 
 pub struct EventHandler {
     rx: mpsc::UnboundedReceiver<Event>,
-    #[allow(dead_code)]
-    task: tokio::task::JoinHandle<()>,
+    // Held to keep the background task alive; dropped when EventHandler is dropped.
+    _task: tokio::task::JoinHandle<()>,
 }
 
 impl EventHandler {
@@ -61,7 +60,7 @@ impl EventHandler {
             }
         });
 
-        Self { rx, task }
+        Self { rx, _task: task }
     }
 
     pub async fn next(&mut self) -> Result<Event> {

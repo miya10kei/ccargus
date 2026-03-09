@@ -7,7 +7,7 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragra
 use crate::action::Action;
 use crate::components::Component;
 use crate::domain::repo::{Repository, filter_repositories, list_repositories};
-use crate::domain::worktree::{branch_exists, list_local_branches};
+use crate::domain::{branch_exists, list_local_branches};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectorStep {

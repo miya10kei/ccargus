@@ -25,20 +25,19 @@ fn default_worktree_base_dir() -> PathBuf {
         .join("worktrees")
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Default, Deserialize)]
 pub struct ClaudeConfig {
     #[serde(default)]
     pub plan: bool,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Default, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub claude: ClaudeConfig,
     #[serde(default)]
     pub editor: EditorConfig,
+    #[allow(dead_code)]
     #[serde(default)]
     pub keybindings: KeybindingsConfig,
     #[serde(default)]
@@ -83,7 +82,6 @@ impl Default for KeybindingsConfig {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct WorktreeConfig {
     #[serde(default = "default_worktree_base_dir")]
