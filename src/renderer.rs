@@ -23,8 +23,7 @@ pub fn build_status_line(ctx: &AppContext, ui: &UiContext) -> StatusLine {
                 message: n.message.clone(),
             });
 
-    ctx.app
-        .worktree_pool
+    ctx.worktree_pool
         .get(ctx.app.selected_worktree)
         .map_or_else(
             || StatusLine {
@@ -58,7 +57,6 @@ pub fn update_components(ctx: &AppContext, ui: &mut UiContext) {
     ui.worktree_tree.selected = ctx.app.selected_worktree;
     ui.worktree_tree.focused = ctx.app.focus == Focus::Worktrees;
     ui.worktree_tree.worktrees = ctx
-        .app
         .worktree_pool
         .all()
         .iter()
@@ -73,12 +71,10 @@ pub fn update_components(ctx: &AppContext, ui: &mut UiContext) {
     ui.terminal_pane.focused = ctx.app.focus == Focus::Terminal;
     ui.terminal_pane.qa_focused = ctx.app.focus == Focus::QaTerminal;
     let new_screen = ctx
-        .app
         .worktree_pool
         .get(ctx.app.selected_worktree)
         .and_then(|wt| wt.pty.as_ref().map(domain::pty::PtySession::screen));
     let new_qa_screen = ctx
-        .app
         .worktree_pool
         .get(ctx.app.selected_worktree)
         .and_then(|wt| wt.qa_pty.as_ref().map(domain::pty::PtySession::screen));

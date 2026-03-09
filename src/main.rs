@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
 
     let mut tui = tui::Tui::new()?;
 
-    let mut app = app::App::new();
+    let app = app::App::new();
     let config = config::Config::load()?;
     config.validate()?;
     let worktree_manager = domain::WorktreeManager::new(
@@ -36,8 +36,9 @@ async fn main() -> Result<()> {
     let status_rx = start_socket_listener(status_cache.socket_path());
     let mut events = event::EventHandler::new(4.0, 60.0, status_rx);
 
+    let mut worktree_pool = domain::worktree::WorktreePool::new();
     let entries = worktree_manager.scan()?;
-    app.worktree_pool.sync_with_worktrees(&entries);
+    worktree_pool.sync_with_worktrees(&entries);
 
     let qa_split_percent = config.layout.qa_split_percent;
 
@@ -47,6 +48,7 @@ async fn main() -> Result<()> {
         notification: None,
         status_cache,
         worktree_manager,
+        worktree_pool,
     };
 
     let mut ui = UiContext {
@@ -102,7 +104,7 @@ fn handle_event(
                 ctx.config.layout.worktree_pane_percent,
                 ctx.config.layout.qa_split_percent,
             );
-            for wt in ctx.app.worktree_pool.all_mut() {
+            for wt in ctx.worktree_pool.all_mut() {
                 let (main_rows, main_cols) = sizes.main_size(wt.has_qa());
                 wt.resize_pty(
                     main_rows,
@@ -119,14 +121,13 @@ fn handle_event(
         }
         event::Event::Render => {
             let pty_dirty = ctx
-                .app
                 .worktree_pool
                 .get(ctx.app.selected_worktree)
                 .is_some_and(domain::worktree::Worktree::any_pty_dirty);
             let editor_dirty = ui.editor_float.visible && ui.editor_float.is_dirty();
 
             if needs_render || pty_dirty || editor_dirty {
-                if let Some(wt) = ctx.app.worktree_pool.get(ctx.app.selected_worktree) {
+                if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree) {
                     wt.clear_pty_dirty();
                 }
                 ui.editor_float.clear_dirty();
@@ -138,7 +139,7 @@ fn handle_event(
             }
         }
         event::Event::Tick => {
-            for wt in ctx.app.worktree_pool.all_mut() {
+            for wt in ctx.worktree_pool.all_mut() {
                 if let Some(pty) = &mut wt.pty
                     && !pty.is_alive()
                 {

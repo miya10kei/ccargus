@@ -44,7 +44,7 @@ pub fn handle_copy_mode_key(
                 .copy_mode_mut(qa)
                 .and_then(CopyModeState::move_up);
             if let Some(ScrollDirection::Up) = scroll_dir {
-                let max = scrollback_max(&ctx.app, qa);
+                let max = scrollback_max(&ctx.worktree_pool, ctx.app.selected_worktree, qa);
                 terminal_pane.scroll_up(qa, 1, max);
             }
         }
@@ -92,7 +92,7 @@ pub fn handle_copy_mode_key(
             }
         }
         KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let max = scrollback_max(&ctx.app, qa);
+            let max = scrollback_max(&ctx.worktree_pool, ctx.app.selected_worktree, qa);
             terminal_pane.scroll_up(qa, terminal_half_page_size(), max);
         }
         KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {

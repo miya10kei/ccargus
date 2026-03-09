@@ -17,13 +17,18 @@ pub fn handle_qa_terminal_key(
         return;
     }
 
-    if handle_scroll_key(&ctx.app, &mut ui.terminal_pane, key, true) {
+    if handle_scroll_key(
+        &ctx.worktree_pool,
+        ctx.app.selected_worktree,
+        &mut ui.terminal_pane,
+        key,
+        true,
+    ) {
         return;
     }
 
     if key.code == KeyCode::Tab {
         let has_qa = ctx
-            .app
             .worktree_pool
             .get(ctx.app.selected_worktree)
             .is_some_and(domain::worktree::Worktree::has_qa);
@@ -39,7 +44,7 @@ pub fn handle_qa_terminal_key(
 
     // Ctrl+d closes Q&A
     if key.code == KeyCode::Char('d') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        if let Some(wt) = ctx.app.worktree_pool.get_mut(ctx.app.selected_worktree) {
+        if let Some(wt) = ctx.worktree_pool.get_mut(ctx.app.selected_worktree) {
             wt.close_qa();
             let sizes = current_pty_sizes_with_config(
                 ctx.config.layout.worktree_pane_percent,
@@ -59,7 +64,7 @@ pub fn handle_qa_terminal_key(
 
     let bytes = key_to_bytes(key);
     if !bytes.is_empty()
-        && let Some(wt) = ctx.app.worktree_pool.get_mut(ctx.app.selected_worktree)
+        && let Some(wt) = ctx.worktree_pool.get_mut(ctx.app.selected_worktree)
         && let Some(qa) = &mut wt.qa_pty
     {
         let _ = qa.write(&bytes);
@@ -75,13 +80,18 @@ pub fn handle_terminal_key(
         return;
     }
 
-    if handle_scroll_key(&ctx.app, &mut ui.terminal_pane, key, false) {
+    if handle_scroll_key(
+        &ctx.worktree_pool,
+        ctx.app.selected_worktree,
+        &mut ui.terminal_pane,
+        key,
+        false,
+    ) {
         return;
     }
 
     if key.code == KeyCode::Tab {
         let has_qa = ctx
-            .app
             .worktree_pool
             .get(ctx.app.selected_worktree)
             .is_some_and(domain::worktree::Worktree::has_qa);
@@ -97,7 +107,7 @@ pub fn handle_terminal_key(
 
     let bytes = key_to_bytes(key);
     if !bytes.is_empty()
-        && let Some(wt) = ctx.app.worktree_pool.get_mut(ctx.app.selected_worktree)
+        && let Some(wt) = ctx.worktree_pool.get_mut(ctx.app.selected_worktree)
         && let Some(pty) = &mut wt.pty
     {
         let _ = pty.write(&bytes);

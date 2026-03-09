@@ -59,7 +59,7 @@ pub fn handle_mouse_event(
         && matches!(ctx.app.focus, Focus::Terminal | Focus::QaTerminal)
     {
         let is_qa = ctx.app.focus == Focus::QaTerminal;
-        let max = scrollback_max(&ctx.app, is_qa);
+        let max = scrollback_max(&ctx.worktree_pool, ctx.app.selected_worktree, is_qa);
         match mouse.kind {
             MouseEventKind::ScrollUp => ui.terminal_pane.scroll_up(is_qa, 3, max),
             MouseEventKind::ScrollDown => ui.terminal_pane.scroll_down(is_qa, 3),
@@ -79,7 +79,6 @@ pub fn handle_mouse_event(
     }
 
     let pty = ctx
-        .app
         .worktree_pool
         .get_mut(ctx.app.selected_worktree)
         .and_then(|wt| match ctx.app.focus {
