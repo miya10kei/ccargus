@@ -11,6 +11,7 @@ pub struct PtySession {
     child: Box<dyn portable_pty::Child + Send + Sync>,
     dirty: Arc<AtomicBool>,
     master: Box<dyn portable_pty::MasterPty + Send>,
+    reader_thread: Option<thread::JoinHandle<()>>,
     screen: Arc<Mutex<vt100::Parser>>,
     #[allow(dead_code)]
     working_dir: String,
@@ -37,7 +38,7 @@ impl PtySession {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| eyre!(e))?;
+            .map_err(|e| eyre!("Failed to open PTY: {e}"))?;
 
         let mut command = CommandBuilder::new(cmd);
         for arg in args {
@@ -45,23 +46,33 @@ impl PtySession {
         }
         command.cwd(working_dir);
 
-        let child = pair.slave.spawn_command(command).map_err(|e| eyre!(e))?;
+        let child = pair
+            .slave
+            .spawn_command(command)
+            .map_err(|e| eyre!("Failed to spawn command '{cmd}': {e}"))?;
         drop(pair.slave);
 
-        let mut reader = pair.master.try_clone_reader().map_err(|e| eyre!(e))?;
-        let writer = pair.master.take_writer().map_err(|e| eyre!(e))?;
+        let mut reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|e| eyre!("Failed to clone PTY reader: {e}"))?;
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|e| eyre!("Failed to take PTY writer: {e}"))?;
 
         let dirty = Arc::new(AtomicBool::new(true));
         let screen = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 1000)));
         let dirty_clone = Arc::clone(&dirty);
         let screen_clone = Arc::clone(&screen);
 
-        thread::spawn(move || {
+        let reader_thread = thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
+                        // Silently skip on mutex poisoning to avoid crashing the reader thread
                         if let Ok(mut parser) = screen_clone.lock() {
                             parser.process(&buf[..n]);
                             dirty_clone.store(true, Ordering::Release);
@@ -75,6 +86,7 @@ impl PtySession {
             child,
             dirty,
             master: pair.master,
+            reader_thread: Some(reader_thread),
             screen,
             working_dir: working_dir.to_owned(),
             writer,
@@ -93,10 +105,12 @@ impl PtySession {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| eyre!(e))?;
-        if let Ok(mut parser) = self.screen.lock() {
-            parser.screen_mut().set_size(rows, cols);
-        }
+            .map_err(|e| eyre!("Failed to resize PTY: {e}"))?;
+        self.screen
+            .lock()
+            .map_err(|_| eyre!("Screen mutex poisoned during resize"))?
+            .screen_mut()
+            .set_size(rows, cols);
         Ok(())
     }
 
@@ -114,6 +128,9 @@ impl PtySession {
     pub fn kill(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        if let Some(handle) = self.reader_thread.take() {
+            let _ = handle.join();
+        }
     }
 
     pub fn screen(&self) -> Arc<Mutex<vt100::Parser>> {
@@ -129,6 +146,16 @@ impl PtySession {
         self.writer.write_all(data)?;
         self.writer.flush()?;
         Ok(())
+    }
+}
+
+impl Drop for PtySession {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        if let Some(handle) = self.reader_thread.take() {
+            let _ = handle.join();
+        }
     }
 }
 
@@ -212,5 +239,12 @@ mod tests {
         session.kill();
         thread::sleep(Duration::from_millis(100));
         assert!(!session.is_alive());
+    }
+
+    #[test]
+    fn drop_cleans_up_reader_thread() {
+        let session = PtySession::spawn("echo", "/tmp", 24, 80).unwrap();
+        drop(session);
+        // No panic means the reader thread was joined successfully
     }
 }
