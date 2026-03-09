@@ -66,7 +66,6 @@ async fn main() -> Result<()> {
 
     let mut ui = UiContext {
         confirm_dialog: components::confirm_dialog::ConfirmDialog::new(),
-        editor_float: components::editor_float::EditorFloat::new(),
         help_overlay: components::help_overlay::HelpOverlay::new(keybindings),
         last_worktree_area: None,
         last_terminal_area: None,
@@ -125,7 +124,6 @@ fn handle_event(
                     sizes.split_qa_cols,
                 );
             }
-            ui.editor_float.resize(rows, cols);
             needs_render = true;
         }
         event::Event::StatusChanged { cwd, status } => {
@@ -136,13 +134,10 @@ fn handle_event(
                 .worktree_pool
                 .get(ctx.app.selected_worktree)
                 .is_some_and(domain::worktree::Worktree::any_pty_dirty);
-            let editor_dirty = ui.editor_float.visible && ui.editor_float.is_dirty();
-
-            if needs_render || pty_dirty || editor_dirty {
+            if needs_render || pty_dirty {
                 if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree) {
                     wt.clear_pty_dirty();
                 }
-                ui.editor_float.clear_dirty();
                 needs_render = false;
 
                 tui.draw(|frame| {

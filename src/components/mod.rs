@@ -1,5 +1,4 @@
 pub mod confirm_dialog;
-pub mod editor_float;
 pub mod help_overlay;
 pub mod qa_selector;
 pub mod repo_selector;

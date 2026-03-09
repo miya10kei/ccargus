@@ -26,20 +26,7 @@ pub fn handle_worktrees_key(
             }
         }
         KeyCode::Char(c) if c == kb.open_editor => {
-            if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree) {
-                let size = crossterm::terminal::size().unwrap_or((80, 24));
-                if let Err(e) = ui.editor_float.open(
-                    &ctx.config.editor.command,
-                    &wt.working_dir(),
-                    size.1,
-                    size.0,
-                ) {
-                    ctx.notify(
-                        format!("Failed to open editor: {e}"),
-                        crate::context::NotificationLevel::Error,
-                    );
-                }
-            }
+            open_editor(ctx);
         }
         KeyCode::Char('j') | KeyCode::Down => {
             ctx.app.select_next_worktree(ctx.worktree_pool.len());
@@ -103,5 +90,31 @@ pub fn handle_worktrees_key(
             }
         }
         _ => {}
+    }
+}
+
+fn open_editor(ctx: &mut AppContext) {
+    if !domain::tmux::is_running() {
+        ctx.notify(
+            "エディタを開くにはtmux環境が必要です".to_owned(),
+            crate::context::NotificationLevel::Error,
+        );
+        return;
+    }
+    let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree) else {
+        return;
+    };
+    let session =
+        domain::tmux::sanitize_session_name(&format!("ccargus-{}-{}", wt.repo, wt.branch));
+    if let Err(e) = domain::tmux::open_editor_popup(
+        &ctx.config.editor.popup.options,
+        &wt.working_dir(),
+        &ctx.config.editor.command,
+        &session,
+    ) {
+        ctx.notify(
+            format!("Failed to open editor: {e}"),
+            crate::context::NotificationLevel::Error,
+        );
     }
 }

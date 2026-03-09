@@ -48,7 +48,11 @@ fn build_help_lines(keybindings: &KeybindingsConfig) -> Vec<Line<'static>> {
             "Delete worktree",
             key,
         ),
-        help_entry(&keybindings.open_editor.to_string(), "Open editor", key),
+        help_entry(
+            &keybindings.open_editor.to_string(),
+            "Open editor (tmux popup)",
+            key,
+        ),
         help_entry(
             &keybindings.qa_worktree.to_string(),
             "Start Q&A session",

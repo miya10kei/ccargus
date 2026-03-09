@@ -23,6 +23,15 @@ fn default_delete_worktree() -> char {
 fn default_editor_command() -> String {
     "vim".to_owned()
 }
+fn default_popup_options() -> Vec<String> {
+    vec![
+        "-E".to_owned(),
+        "-w".to_owned(),
+        "80%".to_owned(),
+        "-h".to_owned(),
+        "80%".to_owned(),
+    ]
+}
 fn default_new_worktree() -> char {
     'n'
 }
@@ -87,6 +96,14 @@ pub struct Config {
 pub struct EditorConfig {
     #[serde(default = "default_editor_command")]
     pub command: String,
+    #[serde(default)]
+    pub popup: EditorPopupConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EditorPopupConfig {
+    #[serde(default = "default_popup_options")]
+    pub options: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,6 +122,15 @@ impl Default for EditorConfig {
     fn default() -> Self {
         Self {
             command: default_editor_command(),
+            popup: EditorPopupConfig::default(),
+        }
+    }
+}
+
+impl Default for EditorPopupConfig {
+    fn default() -> Self {
+        Self {
+            options: default_popup_options(),
         }
     }
 }
@@ -244,6 +270,10 @@ mod tests {
         let config = Config::default();
         assert!(!config.claude.plan);
         assert_eq!(config.editor.command, "vim");
+        assert_eq!(
+            config.editor.popup.options,
+            vec!["-E", "-w", "80%", "-h", "80%"]
+        );
         assert_eq!(config.keybindings.new_worktree, 'n');
         assert_eq!(config.keybindings.delete_worktree, 'd');
         assert_eq!(config.keybindings.open_editor, 'e');
@@ -260,6 +290,9 @@ plan = true
 [editor]
 command = "nvim"
 
+[editor.popup]
+options = ["-E", "-w", "90%", "-h", "90%"]
+
 [keybindings]
 new_worktree = "a"
 delete_worktree = "x"
@@ -272,6 +305,10 @@ base_dir = "/custom/worktrees"
         let config = Config::from_toml(toml).unwrap();
         assert!(config.claude.plan);
         assert_eq!(config.editor.command, "nvim");
+        assert_eq!(
+            config.editor.popup.options,
+            vec!["-E", "-w", "90%", "-h", "90%"]
+        );
         assert_eq!(config.keybindings.new_worktree, 'a');
         assert_eq!(config.keybindings.delete_worktree, 'x');
         assert_eq!(config.keybindings.open_editor, 'o');
@@ -288,6 +325,10 @@ command = "emacs"
         let config = Config::from_toml(toml).unwrap();
         assert!(!config.claude.plan);
         assert_eq!(config.editor.command, "emacs");
+        assert_eq!(
+            config.editor.popup.options,
+            vec!["-E", "-w", "80%", "-h", "80%"]
+        );
         assert_eq!(config.keybindings.new_worktree, 'n');
         assert_eq!(config.keybindings.delete_worktree, 'd');
         assert_eq!(config.keybindings.open_editor, 'e');

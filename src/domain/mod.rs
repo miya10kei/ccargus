@@ -2,6 +2,7 @@ pub mod claude_status;
 pub mod git;
 pub mod pty;
 pub mod repo;
+pub mod tmux;
 pub mod worktree;
 pub mod worktree_entry;
 pub mod worktree_manager;
