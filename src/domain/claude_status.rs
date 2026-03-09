@@ -79,7 +79,7 @@ impl StatusCache {
         self.cache
             .get(cwd)
             .copied()
-            .unwrap_or(ClaudeStatus::Processing)
+            .unwrap_or(ClaudeStatus::Stopped)
     }
 
     pub fn socket_path(&self) -> &PathBuf {
@@ -180,12 +180,9 @@ mod tests {
     }
 
     #[test]
-    fn processing_when_pty_but_no_cache_entry() {
+    fn stopped_when_pty_but_no_cache_entry() {
         let cache = StatusCache::new();
-        assert_eq!(
-            cache.read_status("/some/path", true),
-            ClaudeStatus::Processing
-        );
+        assert_eq!(cache.read_status("/some/path", true), ClaudeStatus::Stopped);
     }
 
     #[test]
@@ -213,20 +210,14 @@ mod tests {
         let mut cache = StatusCache::new();
         cache.update("/some/path", "processing");
         cache.cleanup("/some/path");
-        assert_eq!(
-            cache.read_status("/some/path", true),
-            ClaudeStatus::Processing
-        );
+        assert_eq!(cache.read_status("/some/path", true), ClaudeStatus::Stopped);
     }
 
     #[test]
     fn update_ignores_unknown_status() {
         let mut cache = StatusCache::new();
         cache.update("/some/path", "unknown");
-        assert_eq!(
-            cache.read_status("/some/path", true),
-            ClaudeStatus::Processing
-        );
+        assert_eq!(cache.read_status("/some/path", true), ClaudeStatus::Stopped);
     }
 
     #[test]
