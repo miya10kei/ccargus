@@ -114,11 +114,12 @@ impl PtySession {
         Ok(())
     }
 
+    pub fn exit_status(&mut self) -> Option<portable_pty::ExitStatus> {
+        self.child.try_wait().ok().flatten()
+    }
+
     pub fn is_alive(&mut self) -> bool {
-        self.child
-            .try_wait()
-            .ok()
-            .is_none_or(|status| status.is_none())
+        self.exit_status().is_none()
     }
 
     pub fn is_dirty(&self) -> bool {
@@ -246,5 +247,19 @@ mod tests {
         let session = PtySession::spawn("echo", "/tmp", 24, 80).unwrap();
         drop(session);
         // No panic means the reader thread was joined successfully
+    }
+
+    #[test]
+    fn exit_status_returns_none_for_running_process() {
+        let mut session = PtySession::spawn("cat", "/tmp", 24, 80).unwrap();
+        assert!(session.exit_status().is_none());
+        session.kill();
+    }
+
+    #[test]
+    fn exit_status_returns_some_for_exited_process() {
+        let mut session = PtySession::spawn("echo", "/tmp", 24, 80).unwrap();
+        thread::sleep(Duration::from_millis(500));
+        assert!(session.exit_status().is_some());
     }
 }

@@ -254,14 +254,14 @@ mod tests {
     #[test]
     fn confirm_delete_removes_from_pool() {
         let mut env = setup();
-        let wt = crate::domain::worktree::Worktree {
-            branch: "test-branch".into(),
-            pty: None,
-            qa_pty: None,
-            repo: "test-repo".into(),
-            source_repo_path: "/tmp".into(),
-            worktree_path: std::path::PathBuf::from("/tmp/test"),
-        };
+        let wt = crate::domain::worktree::Worktree::from_entry(
+            &crate::domain::worktree_entry::WorktreeEntry {
+                branch: "test-branch".into(),
+                repo_name: "test-repo".into(),
+                source_repo_path: "/tmp".into(),
+                worktree_path: std::path::PathBuf::from("/tmp/test"),
+            },
+        );
         env.ctx.worktree_pool.add(wt);
         assert_eq!(env.ctx.worktree_pool.len(), 1);
 
@@ -275,14 +275,14 @@ mod tests {
     #[test]
     fn confirm_delete_notifies_on_error() {
         let mut env = setup();
-        let wt = crate::domain::worktree::Worktree {
-            branch: "nonexistent-branch".into(),
-            pty: None,
-            qa_pty: None,
-            repo: "nonexistent-repo".into(),
-            source_repo_path: "/nonexistent/path".into(),
-            worktree_path: std::path::PathBuf::from("/nonexistent/worktree"),
-        };
+        let wt = crate::domain::worktree::Worktree::from_entry(
+            &crate::domain::worktree_entry::WorktreeEntry {
+                branch: "nonexistent-branch".into(),
+                repo_name: "nonexistent-repo".into(),
+                source_repo_path: "/nonexistent/path".into(),
+                worktree_path: std::path::PathBuf::from("/nonexistent/worktree"),
+            },
+        );
         env.ctx.worktree_pool.add(wt);
 
         env.ui

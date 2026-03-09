@@ -11,7 +11,9 @@ pub struct Worktree {
     pub pty: Option<PtySession>,
     pub qa_pty: Option<PtySession>,
     pub repo: String,
+    restart_attempted: bool,
     pub source_repo_path: String,
+    started_with_continue: bool,
     pub worktree_path: PathBuf,
 }
 
@@ -73,7 +75,9 @@ impl Worktree {
             pty: None,
             qa_pty: None,
             repo: entry.repo_name.clone(),
+            restart_attempted: false,
             source_repo_path: entry.source_repo_path.clone(),
+            started_with_continue: false,
             worktree_path: entry.worktree_path.clone(),
         }
     }
@@ -95,6 +99,22 @@ impl Worktree {
         }
     }
 
+    pub fn restart_without_continue(
+        &mut self,
+        rows: u16,
+        cols: u16,
+        plan: bool,
+        claude_command: &str,
+    ) -> Result<()> {
+        self.pty = None;
+        self.restart_attempted = true;
+        self.start(rows, cols, false, plan, claude_command)
+    }
+
+    pub fn should_restart_without_continue(&self) -> bool {
+        self.started_with_continue && !self.restart_attempted
+    }
+
     pub fn start(
         &mut self,
         rows: u16,
@@ -106,6 +126,8 @@ impl Worktree {
         if self.pty.is_some() {
             return Ok(());
         }
+        self.started_with_continue = auto_continue;
+        self.restart_attempted = false;
         let working_dir = self.working_dir();
         let mut args: Vec<&str> = Vec::new();
         if auto_continue {
@@ -129,6 +151,8 @@ impl Worktree {
             pty.kill();
         }
         self.pty = None;
+        self.started_with_continue = false;
+        self.restart_attempted = false;
     }
 
     pub fn to_entry(&self) -> WorktreeEntry {
@@ -235,7 +259,9 @@ impl WorktreePool {
             pty: None,
             qa_pty: None,
             repo: repo.to_string(),
+            restart_attempted: false,
             source_repo_path: String::new(),
+            started_with_continue: false,
             worktree_path: PathBuf::from(worktree_path),
         })
     }
@@ -248,7 +274,9 @@ impl WorktreePool {
             pty: Some(pty),
             qa_pty: None,
             repo: repo.to_string(),
+            restart_attempted: false,
             source_repo_path: String::new(),
+            started_with_continue: false,
             worktree_path: PathBuf::from(worktree_path),
         }))
     }
@@ -477,5 +505,39 @@ mod tests {
         pool.add_stopped("test/repo", "main", "/tmp/worktree");
         let wt = pool.get(0).unwrap();
         assert_eq!(wt.working_dir(), "/tmp/worktree");
+    }
+
+    fn create_worktree_with_restart_state(
+        started_with_continue: bool,
+        restart_attempted: bool,
+    ) -> Worktree {
+        let entry = WorktreeEntry {
+            branch: "main".to_string(),
+            repo_name: "test/repo".to_string(),
+            source_repo_path: String::new(),
+            worktree_path: PathBuf::from("/tmp"),
+        };
+        let mut wt = Worktree::from_entry(&entry);
+        wt.started_with_continue = started_with_continue;
+        wt.restart_attempted = restart_attempted;
+        wt
+    }
+
+    #[test]
+    fn should_restart_without_continue_true_when_started_with_continue() {
+        let wt = create_worktree_with_restart_state(true, false);
+        assert!(wt.should_restart_without_continue());
+    }
+
+    #[test]
+    fn should_restart_without_continue_false_when_not_started_with_continue() {
+        let wt = create_worktree_with_restart_state(false, false);
+        assert!(!wt.should_restart_without_continue());
+    }
+
+    #[test]
+    fn should_restart_without_continue_false_after_retry() {
+        let wt = create_worktree_with_restart_state(true, true);
+        assert!(!wt.should_restart_without_continue());
     }
 }
