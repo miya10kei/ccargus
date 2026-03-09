@@ -417,8 +417,20 @@ impl WorktreePool {
         }
     }
 
-    pub fn add(&mut self, wt: Worktree) {
-        self.worktrees.push(wt);
+    pub fn add(&mut self, wt: Worktree) -> usize {
+        let name = wt.display_name().to_string();
+        if let Some(last_pos) = self
+            .worktrees
+            .iter()
+            .rposition(|w| w.display_name() == name)
+        {
+            let insert_pos = last_pos + 1;
+            self.worktrees.insert(insert_pos, wt);
+            insert_pos
+        } else {
+            self.worktrees.push(wt);
+            self.worktrees.len() - 1
+        }
     }
 
     pub fn all(&self) -> &[Worktree] {
@@ -479,29 +491,28 @@ impl WorktreePool {
     }
 
     #[cfg(test)]
-    pub fn add_stopped(&mut self, repo: &str, branch: &str, worktree_path: &str) {
-        self.worktrees.push(Worktree {
+    pub fn add_stopped(&mut self, repo: &str, branch: &str, worktree_path: &str) -> usize {
+        self.add(Worktree {
             branch: branch.to_string(),
             pty: None,
             qa_pty: None,
             repo: repo.to_string(),
             source_repo_path: String::new(),
             worktree_path: PathBuf::from(worktree_path),
-        });
+        })
     }
 
     #[cfg(test)]
-    pub fn add_test(&mut self, repo: &str, branch: &str, worktree_path: &str) -> Result<()> {
+    pub fn add_test(&mut self, repo: &str, branch: &str, worktree_path: &str) -> Result<usize> {
         let pty = PtySession::spawn("cat", worktree_path, 24, 80)?;
-        self.worktrees.push(Worktree {
+        Ok(self.add(Worktree {
             branch: branch.to_string(),
             pty: Some(pty),
             qa_pty: None,
             repo: repo.to_string(),
             source_repo_path: String::new(),
             worktree_path: PathBuf::from(worktree_path),
-        });
-        Ok(())
+        }))
     }
 }
 
@@ -822,6 +833,30 @@ mod tests {
         assert!(wt.is_running());
         wt.stop();
         assert!(!wt.is_running());
+    }
+
+    #[test]
+    fn add_groups_by_repo() {
+        let mut pool = WorktreePool::new();
+        pool.add_stopped("github.com/owner/repo-a", "b1", "/tmp/a1");
+        pool.add_stopped("github.com/owner/repo-b", "b2", "/tmp/b1");
+        pool.add_stopped("github.com/owner/repo-a", "b3", "/tmp/a2");
+
+        assert_eq!(pool.get(0).unwrap().branch, "b1");
+        assert_eq!(pool.get(1).unwrap().branch, "b3");
+        assert_eq!(pool.get(2).unwrap().branch, "b2");
+    }
+
+    #[test]
+    fn add_returns_correct_index() {
+        let mut pool = WorktreePool::new();
+        let idx0 = pool.add_stopped("github.com/owner/repo-a", "b1", "/tmp/a1");
+        let idx1 = pool.add_stopped("github.com/owner/repo-b", "b2", "/tmp/b1");
+        let idx2 = pool.add_stopped("github.com/owner/repo-a", "b3", "/tmp/a2");
+
+        assert_eq!(idx0, 0);
+        assert_eq!(idx1, 1);
+        assert_eq!(idx2, 1);
     }
 
     #[test]
