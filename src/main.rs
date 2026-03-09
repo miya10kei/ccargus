@@ -20,6 +20,11 @@ mod tui;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    if std::env::args().any(|a| a == "--version" || a == "-V") {
+        println!("ccargus {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     color_eyre::install()?;
 
     let mut tui = tui::Tui::new()?;

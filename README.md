@@ -40,6 +40,15 @@ lazygit風のマルチペインレイアウトで、worktree一覧・Claude Code
 
 ## インストール
 
+### Homebrew (macOS / Linux)
+
+```bash
+brew tap miya10kei/tap https://github.com/miya10kei/ccargus
+brew install ccargus
+```
+
+### ソースからビルド
+
 ```bash
 git clone https://github.com/miya10kei/ccargus.git
 cd ccargus
