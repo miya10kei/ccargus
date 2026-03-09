@@ -3,6 +3,9 @@ name = "ccargus"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+description = "A TUI application for managing multiple Claude Code worktree sessions"
+homepage = "https://github.com/miya10kei/ccargus"
+repository = "https://github.com/miya10kei/ccargus"
 
 [[bin]]
 name = "ccargus"

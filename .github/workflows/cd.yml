@@ -1,0 +1,150 @@
+name: CD
+
+on:
+  release:
+    types: [published]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          - target: x86_64-apple-darwin
+            runner: macos-13
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Set version from tag
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          sed -i'' -e 's/^version = ".*"/version = "'"$VERSION"'"/' Cargo.toml
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build-${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Create archive
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          ARCHIVE="ccargus-${TAG}-${{ matrix.target }}.tar.gz"
+          tar -czf "${ARCHIVE}" \
+            -C target/${{ matrix.target }}/release \
+            ccargus ccargus-notify
+          shasum -a 256 "${ARCHIVE}" > "${ARCHIVE}.sha256"
+          echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ccargus-${{ matrix.target }}
+          path: |
+            ${{ env.ARCHIVE }}
+            ${{ env.ARCHIVE }}.sha256
+
+  upload:
+    name: Upload to Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            artifacts/*.tar.gz artifacts/*.sha256 \
+            --repo "${{ github.repository }}"
+
+  homebrew:
+    name: Update Homebrew Formula
+    needs: upload
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate Formula
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"
+
+          SHA_AARCH64_APPLE=$(awk '{print $1}' "artifacts/ccargus-${TAG}-aarch64-apple-darwin.tar.gz.sha256")
+          SHA_X86_64_APPLE=$(awk '{print $1}' "artifacts/ccargus-${TAG}-x86_64-apple-darwin.tar.gz.sha256")
+          SHA_X86_64_LINUX=$(awk '{print $1}' "artifacts/ccargus-${TAG}-x86_64-unknown-linux-gnu.tar.gz.sha256")
+
+          cat > Formula/ccargus.rb << FORMULA
+          class Ccargus < Formula
+            desc "A TUI application for managing multiple Claude Code worktree sessions"
+            homepage "https://github.com/miya10kei/ccargus"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/miya10kei/ccargus/releases/download/${TAG}/ccargus-${TAG}-aarch64-apple-darwin.tar.gz"
+                sha256 "${SHA_AARCH64_APPLE}"
+              end
+              on_intel do
+                url "https://github.com/miya10kei/ccargus/releases/download/${TAG}/ccargus-${TAG}-x86_64-apple-darwin.tar.gz"
+                sha256 "${SHA_X86_64_APPLE}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/miya10kei/ccargus/releases/download/${TAG}/ccargus-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${SHA_X86_64_LINUX}"
+              end
+            end
+
+            def install
+              bin.install "ccargus"
+              bin.install "ccargus-notify"
+            end
+
+            test do
+              assert_match "ccargus #{version}", shell_output("#{bin}/ccargus --version")
+            end
+          end
+          FORMULA
+
+          # Remove leading spaces from heredoc
+          sed -i 's/^          //' Formula/ccargus.rb
+
+      - name: Commit and push Formula
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/ccargus.rb
+          git commit -m "Update Homebrew Formula for ${{ github.event.release.tag_name }}"
+          git push origin HEAD:main
