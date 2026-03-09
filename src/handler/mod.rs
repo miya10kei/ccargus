@@ -10,14 +10,12 @@ use crate::components::confirm_dialog::ConfirmAction;
 use crate::components::qa_selector::QaMode;
 use crate::context::{AppContext, UiContext};
 use crate::domain;
-use crate::keys::key_to_bytes;
 use crate::layout::current_pty_sizes_with_config;
 
 type ModalHandler = fn(&mut AppContext, &mut UiContext, crossterm::event::KeyEvent) -> bool;
 
 /// Modal handlers in priority order (highest first).
 const MODAL_HANDLERS: &[ModalHandler] = &[
-    handle_editor_float_key,
     handle_confirm_dialog_key,
     handle_repo_selector_key,
     handle_qa_selector_key,
@@ -87,26 +85,6 @@ fn handle_help_overlay_key(
     }
 
     ui.help_overlay.handle_key_event(key);
-    true
-}
-
-fn handle_editor_float_key(
-    _ctx: &mut AppContext,
-    ui: &mut UiContext,
-    key: crossterm::event::KeyEvent,
-) -> bool {
-    if !ui.editor_float.visible {
-        return false;
-    }
-
-    if !ui.editor_float.is_process_alive() {
-        ui.editor_float.close();
-        return true;
-    }
-    let bytes = key_to_bytes(key);
-    if !bytes.is_empty() {
-        let _ = ui.editor_float.write(&bytes);
-    }
     true
 }
 
@@ -202,7 +180,6 @@ mod tests {
 
     use super::*;
     use crate::components::confirm_dialog::ConfirmDialog;
-    use crate::components::editor_float::EditorFloat;
     use crate::components::help_overlay::HelpOverlay;
     use crate::components::qa_selector::QaSelector;
     use crate::components::repo_selector::RepoSelector;
@@ -234,7 +211,6 @@ mod tests {
             },
             ui: UiContext {
                 confirm_dialog: ConfirmDialog::new(),
-                editor_float: EditorFloat::new(),
                 help_overlay: HelpOverlay::new(KeybindingsConfig::default()),
                 last_worktree_area: None,
                 last_terminal_area: None,
@@ -333,16 +309,5 @@ mod tests {
         let mut env = setup();
         let result = handle_help_overlay_key(&mut env.ctx, &mut env.ui, key(KeyCode::Esc));
         assert!(!result);
-    }
-
-    #[test]
-    fn modal_priority_editor_over_confirm() {
-        let mut env = setup();
-        env.ui.editor_float.visible = true;
-        env.ui.confirm_dialog.open("Test?", ConfirmAction::QuitApp);
-
-        handle_key_press(&mut env.ctx, &mut env.ui, key(KeyCode::Char('y')));
-        // If confirm_dialog had handled it, app would have quit
-        assert!(env.ctx.app.is_running());
     }
 }

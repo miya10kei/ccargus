@@ -14,8 +14,7 @@ pub fn handle_mouse_event(
     if matches!(
         mouse.kind,
         MouseEventKind::Down(crossterm::event::MouseButton::Left)
-    ) && !ui.editor_float.visible
-        && !ui.repo_selector.visible
+    ) && !ui.repo_selector.visible
         && !ui.qa_selector.visible
         && !ui.confirm_dialog.visible
         && !ui.help_overlay.visible
@@ -54,10 +53,7 @@ pub fn handle_mouse_event(
         MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
     );
 
-    if is_scroll_wheel
-        && !ui.editor_float.visible
-        && matches!(ctx.app.focus, Focus::Terminal | Focus::QaTerminal)
-    {
+    if is_scroll_wheel && matches!(ctx.app.focus, Focus::Terminal | Focus::QaTerminal) {
         let is_qa = ctx.app.focus == Focus::QaTerminal;
         let max = scrollback_max(&ctx.worktree_pool, ctx.app.selected_worktree, is_qa);
         match mouse.kind {
@@ -70,11 +66,6 @@ pub fn handle_mouse_event(
 
     let bytes = mouse_to_bytes(mouse);
     if bytes.is_empty() {
-        return;
-    }
-
-    if ui.editor_float.visible {
-        let _ = ui.editor_float.write(&bytes);
         return;
     }
 

@@ -122,12 +122,10 @@ pub fn render(frame: &mut Frame, ui: &mut UiContext, ctx: &AppContext) {
     ui.repo_selector.render(frame, frame.area());
     ui.qa_selector.render(frame, frame.area());
     ui.confirm_dialog.render(frame, frame.area());
-    ui.editor_float.render(frame, frame.area());
     ui.help_overlay.render(frame, frame.area());
 
     // Show cursor at IME position when no overlay is active
-    if !ui.editor_float.visible
-        && !ui.repo_selector.visible
+    if !ui.repo_selector.visible
         && !ui.qa_selector.visible
         && !ui.confirm_dialog.visible
         && !ui.help_overlay.visible

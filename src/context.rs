@@ -2,7 +2,6 @@ use std::time::Instant;
 
 use crate::app::App;
 use crate::components::confirm_dialog::ConfirmDialog;
-use crate::components::editor_float::EditorFloat;
 use crate::components::help_overlay::HelpOverlay;
 use crate::components::qa_selector::QaSelector;
 use crate::components::repo_selector::RepoSelector;
@@ -55,7 +54,6 @@ impl AppContext {
 
 pub struct UiContext {
     pub confirm_dialog: ConfirmDialog,
-    pub editor_float: EditorFloat,
     pub help_overlay: HelpOverlay,
     pub last_worktree_area: Option<ratatui::layout::Rect>,
     pub last_terminal_area: Option<ratatui::layout::Rect>,

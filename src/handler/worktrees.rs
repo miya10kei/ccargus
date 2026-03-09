@@ -11,6 +11,35 @@ pub fn handle_worktrees_key(
     key: crossterm::event::KeyEvent,
 ) {
     let kb = &ctx.config.keybindings;
+
+    if kb.delete_worktree.matches(&key) {
+        if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree) {
+            let message = format!("Delete worktree '{}/{}'?", wt.repo, wt.branch);
+            ui.confirm_dialog
+                .open(message, ConfirmAction::DeleteWorktree);
+        }
+        return;
+    }
+
+    if kb.open_editor.matches(&key) {
+        open_editor(ctx);
+        return;
+    }
+
+    if kb.new_worktree.matches(&key) {
+        ui.repo_selector.open();
+        return;
+    }
+
+    if kb.qa_worktree.matches(&key) {
+        if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree)
+            && wt.is_running()
+        {
+            ui.qa_selector.open();
+        }
+        return;
+    }
+
     match key.code {
         KeyCode::Char('q' | 'c')
             if key.code == KeyCode::Char('q') || key.modifiers.contains(KeyModifiers::CONTROL) =>
@@ -18,44 +47,11 @@ pub fn handle_worktrees_key(
             ui.confirm_dialog
                 .open("Quit ccargus?", ConfirmAction::QuitApp);
         }
-        KeyCode::Char(c) if c == kb.delete_worktree => {
-            if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree) {
-                let message = format!("Delete worktree '{}/{}'?", wt.repo, wt.branch);
-                ui.confirm_dialog
-                    .open(message, ConfirmAction::DeleteWorktree);
-            }
-        }
-        KeyCode::Char(c) if c == kb.open_editor => {
-            if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree) {
-                let size = crossterm::terminal::size().unwrap_or((80, 24));
-                if let Err(e) = ui.editor_float.open(
-                    &ctx.config.editor.command,
-                    &wt.working_dir(),
-                    size.1,
-                    size.0,
-                ) {
-                    ctx.notify(
-                        format!("Failed to open editor: {e}"),
-                        crate::context::NotificationLevel::Error,
-                    );
-                }
-            }
-        }
         KeyCode::Char('j') | KeyCode::Down => {
             ctx.app.select_next_worktree(ctx.worktree_pool.len());
         }
         KeyCode::Char('k') | KeyCode::Up => {
             ctx.app.select_prev_worktree(ctx.worktree_pool.len());
-        }
-        KeyCode::Char(c) if c == kb.new_worktree => {
-            ui.repo_selector.open();
-        }
-        KeyCode::Char(c) if c == kb.qa_worktree => {
-            if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree)
-                && wt.is_running()
-            {
-                ui.qa_selector.open();
-            }
         }
         KeyCode::Char('?') => {
             ui.help_overlay.toggle();
@@ -103,5 +99,31 @@ pub fn handle_worktrees_key(
             }
         }
         _ => {}
+    }
+}
+
+pub(crate) fn open_editor(ctx: &mut AppContext) {
+    if !domain::tmux::is_running() {
+        ctx.notify(
+            "エディタを開くにはtmux環境が必要です".to_owned(),
+            crate::context::NotificationLevel::Error,
+        );
+        return;
+    }
+    let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree) else {
+        return;
+    };
+    let session =
+        domain::tmux::sanitize_session_name(&format!("ccargus-{}-{}", wt.repo, wt.branch));
+    if let Err(e) = domain::tmux::open_editor_popup(
+        &ctx.config.editor.popup.options,
+        &wt.working_dir(),
+        &ctx.config.editor.command,
+        &session,
+    ) {
+        ctx.notify(
+            format!("Failed to open editor: {e}"),
+            crate::context::NotificationLevel::Error,
+        );
     }
 }

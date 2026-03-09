@@ -1,7 +1,6 @@
 use color_eyre::Result;
 use crossterm::event::KeyEventKind;
 
-use crate::config::KeybindingsConfig;
 use crate::context::{AppContext, UiContext};
 use crate::domain::claude_status::start_socket_listener;
 use crate::layout::calculate_pty_sizes;
@@ -46,14 +45,9 @@ async fn main() -> Result<()> {
     let entries = worktree_manager.scan()?;
     worktree_pool.sync_with_worktrees(&entries);
 
-    let new_worktree_key = config.keybindings.new_worktree;
+    let new_worktree_key = config.keybindings.new_worktree.key;
     let qa_split_percent = config.layout.qa_split_percent;
-    let keybindings = KeybindingsConfig {
-        delete_worktree: config.keybindings.delete_worktree,
-        new_worktree: config.keybindings.new_worktree,
-        open_editor: config.keybindings.open_editor,
-        qa_worktree: config.keybindings.qa_worktree,
-    };
+    let keybindings = config.keybindings.clone();
 
     let mut ctx = AppContext {
         app,
@@ -66,7 +60,6 @@ async fn main() -> Result<()> {
 
     let mut ui = UiContext {
         confirm_dialog: components::confirm_dialog::ConfirmDialog::new(),
-        editor_float: components::editor_float::EditorFloat::new(),
         help_overlay: components::help_overlay::HelpOverlay::new(keybindings),
         last_worktree_area: None,
         last_terminal_area: None,
@@ -125,7 +118,6 @@ fn handle_event(
                     sizes.split_qa_cols,
                 );
             }
-            ui.editor_float.resize(rows, cols);
             needs_render = true;
         }
         event::Event::StatusChanged { cwd, status } => {
@@ -136,13 +128,10 @@ fn handle_event(
                 .worktree_pool
                 .get(ctx.app.selected_worktree)
                 .is_some_and(domain::worktree::Worktree::any_pty_dirty);
-            let editor_dirty = ui.editor_float.visible && ui.editor_float.is_dirty();
-
-            if needs_render || pty_dirty || editor_dirty {
+            if needs_render || pty_dirty {
                 if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree) {
                     wt.clear_pty_dirty();
                 }
-                ui.editor_float.clear_dirty();
                 needs_render = false;
 
                 tui.draw(|frame| {
