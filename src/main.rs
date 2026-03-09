@@ -87,6 +87,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 fn handle_event(
     event: event::Event,
     ctx: &mut AppContext,
@@ -141,20 +142,51 @@ fn handle_event(
             }
         }
         event::Event::Tick => {
+            let plan = ctx.config.claude.plan;
+            let claude_command = ctx.config.claude.command.clone();
+            let worktree_pane_percent = ctx.config.layout.worktree_pane_percent;
+            let qa_split_percent = ctx.config.layout.qa_split_percent;
             let selected = ctx.app.selected_worktree;
             let mut selected_pty_died = false;
             let mut selected_qa_died = false;
+            let mut restart_failed_name: Option<String> = None;
 
             for (i, wt) in ctx.worktree_pool.all_mut().iter_mut().enumerate() {
                 if let Some(pty) = &mut wt.pty
-                    && !pty.is_alive()
+                    && let Some(status) = pty.exit_status()
                 {
-                    ctx.status_cache.cleanup(&wt.working_dir());
-                    wt.pty = None;
-                    needs_render = true;
-                    if i == selected {
-                        selected_pty_died = true;
+                    let should_restart = !status.success() && wt.should_restart_without_continue();
+                    let restarted = should_restart
+                        && crossterm::terminal::size()
+                            .ok()
+                            .and_then(|(cols, rows)| {
+                                let sizes = calculate_pty_sizes(
+                                    cols,
+                                    rows,
+                                    worktree_pane_percent,
+                                    qa_split_percent,
+                                );
+                                let (main_rows, main_cols) = sizes.main_size(wt.has_qa());
+                                wt.restart_without_continue(
+                                    main_rows,
+                                    main_cols,
+                                    plan,
+                                    &claude_command,
+                                )
+                                .ok()
+                            })
+                            .is_some();
+                    if !restarted {
+                        if should_restart {
+                            restart_failed_name = Some(wt.display_name().to_string());
+                        }
+                        ctx.status_cache.cleanup(&wt.working_dir());
+                        wt.pty = None;
+                        if i == selected {
+                            selected_pty_died = true;
+                        }
                     }
+                    needs_render = true;
                 }
                 if let Some(qa) = &mut wt.qa_pty
                     && !qa.is_alive()
@@ -167,6 +199,12 @@ fn handle_event(
                 }
             }
 
+            if let Some(name) = restart_failed_name {
+                ctx.notify(
+                    format!("Failed to restart Claude for {name}"),
+                    crate::context::NotificationLevel::Error,
+                );
+            }
             if selected_pty_died && ctx.app.focus == Focus::Terminal {
                 ctx.app.focus = Focus::Worktrees;
             }
