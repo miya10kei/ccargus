@@ -364,12 +364,22 @@ impl Worktree {
         self.pty.is_some()
     }
 
-    pub fn start(&mut self, rows: u16, cols: u16) -> Result<()> {
+    pub fn start(&mut self, rows: u16, cols: u16, plan: bool) -> Result<()> {
         if self.pty.is_some() {
             return Ok(());
         }
         let working_dir = self.working_dir();
-        let pty = PtySession::spawn("claude", &working_dir, rows, cols)?;
+        let pty = if plan {
+            PtySession::spawn_with_args(
+                "claude",
+                &["--permission-mode", "plan"],
+                &working_dir,
+                rows,
+                cols,
+            )?
+        } else {
+            PtySession::spawn("claude", &working_dir, rows, cols)?
+        };
         self.pty = Some(pty);
         Ok(())
     }
