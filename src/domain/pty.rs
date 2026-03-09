@@ -7,12 +7,12 @@ use color_eyre::Result;
 use color_eyre::eyre::eyre;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
-#[allow(dead_code)]
 pub struct PtySession {
     child: Box<dyn portable_pty::Child + Send + Sync>,
     dirty: Arc<AtomicBool>,
     master: Box<dyn portable_pty::MasterPty + Send>,
     screen: Arc<Mutex<vt100::Parser>>,
+    #[allow(dead_code)]
     working_dir: String,
     writer: Box<dyn Write + Send>,
 }
@@ -120,7 +120,7 @@ impl PtySession {
         Arc::clone(&self.screen)
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn working_dir(&self) -> &str {
         &self.working_dir
     }

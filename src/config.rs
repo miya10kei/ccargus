@@ -3,6 +3,9 @@ use std::path::PathBuf;
 use color_eyre::Result;
 use serde::Deserialize;
 
+fn default_claude_command() -> String {
+    "claude".to_owned()
+}
 fn default_delete_worktree() -> char {
     'd'
 }
@@ -15,24 +18,46 @@ fn default_new_worktree() -> char {
 fn default_open_editor() -> char {
     'e'
 }
+fn default_protected_branches() -> Vec<String> {
+    vec!["main".to_owned(), "master".to_owned(), "develop".to_owned()]
+}
+fn default_qa_split_percent() -> u16 {
+    50
+}
 fn default_qa_worktree() -> char {
     's'
 }
+fn default_worktree_pane_percent() -> u16 {
+    25
+}
 fn default_worktree_base_dir() -> PathBuf {
     dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("/"))
+                .join(".local/share")
+        })
         .join("ccargus")
         .join("worktrees")
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ClaudeConfig {
+    #[serde(default = "default_claude_command")]
+    pub command: String,
     #[serde(default)]
     pub plan: bool,
 }
 
-#[allow(dead_code)]
+impl Default for ClaudeConfig {
+    fn default() -> Self {
+        Self {
+            command: default_claude_command(),
+            plan: false,
+        }
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -41,6 +66,8 @@ pub struct Config {
     pub editor: EditorConfig,
     #[serde(default)]
     pub keybindings: KeybindingsConfig,
+    #[serde(default)]
+    pub layout: LayoutConfig,
     #[serde(default)]
     pub worktree: WorktreeConfig,
 }
@@ -51,7 +78,6 @@ pub struct EditorConfig {
     pub command: String,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct KeybindingsConfig {
     #[serde(default = "default_delete_worktree")]
@@ -83,27 +109,65 @@ impl Default for KeybindingsConfig {
     }
 }
 
-#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct LayoutConfig {
+    #[serde(default = "default_qa_split_percent")]
+    pub qa_split_percent: u16,
+    #[serde(default = "default_worktree_pane_percent")]
+    pub worktree_pane_percent: u16,
+}
+
+impl Default for LayoutConfig {
+    fn default() -> Self {
+        Self {
+            qa_split_percent: default_qa_split_percent(),
+            worktree_pane_percent: default_worktree_pane_percent(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct WorktreeConfig {
     #[serde(default = "default_worktree_base_dir")]
     pub base_dir: PathBuf,
+    #[serde(default = "default_protected_branches")]
+    pub protected_branches: Vec<String>,
 }
 
 impl Default for WorktreeConfig {
     fn default() -> Self {
         Self {
             base_dir: default_worktree_base_dir(),
+            protected_branches: default_protected_branches(),
         }
     }
 }
 
 impl Config {
     pub fn config_path() -> PathBuf {
+        if let Ok(path) = std::env::var("CCARGUS_CONFIG") {
+            return PathBuf::from(path);
+        }
         dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("~/.config"))
+            .unwrap_or_else(|| {
+                dirs::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("/"))
+                    .join(".config")
+            })
             .join("ccargus")
             .join("config.toml")
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        if self.editor.command.is_empty() {
+            return Err(color_eyre::eyre::eyre!("editor.command must not be empty"));
+        }
+        if self.worktree.base_dir.as_os_str().is_empty() {
+            return Err(color_eyre::eyre::eyre!(
+                "worktree.base_dir must not be empty"
+            ));
+        }
+        Ok(())
     }
 
     pub fn from_toml(content: &str) -> Result<Self> {

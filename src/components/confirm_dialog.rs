@@ -1,12 +1,12 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
-use crate::action::Action;
 use crate::components::Component;
+use crate::components::utils::centered_rect_fixed_height;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConfirmAction {
@@ -50,9 +50,9 @@ impl ConfirmDialog {
 }
 
 impl Component for ConfirmDialog {
-    fn handle_key_event(&mut self, key: KeyEvent) -> Action {
+    fn handle_key_event(&mut self, key: KeyEvent) {
         if !self.visible {
-            return Action::None;
+            return;
         }
 
         match key.code {
@@ -66,7 +66,6 @@ impl Component for ConfirmDialog {
             }
             _ => {}
         }
-        Action::None
     }
 
     fn render(&self, frame: &mut Frame, area: Rect) {
@@ -74,7 +73,11 @@ impl Component for ConfirmDialog {
             return;
         }
 
-        let popup_area = centered_rect(50, 5, area);
+        // +4 for border (2) + padding (2), minimum 30%
+        #[allow(clippy::cast_possible_truncation)]
+        let msg_width_percent =
+            ((self.message.len() as u16 + 4) * 100 / area.width.max(1)).clamp(30, 80);
+        let popup_area = centered_rect_fixed_height(msg_width_percent, 5, area);
         frame.render_widget(Clear, popup_area);
 
         let text = vec![
@@ -99,26 +102,6 @@ impl Component for ConfirmDialog {
 
         frame.render_widget(paragraph, popup_area);
     }
-}
-
-fn centered_rect(percent_x: u16, height: u16, area: Rect) -> Rect {
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length((area.height.saturating_sub(height)) / 2),
-            Constraint::Length(height),
-            Constraint::Min(0),
-        ])
-        .split(area);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(vertical[1])[1]
 }
 
 #[cfg(test)]
