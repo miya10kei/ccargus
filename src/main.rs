@@ -1,6 +1,7 @@
 use color_eyre::Result;
 use crossterm::event::KeyEventKind;
 
+use crate::app::Focus;
 use crate::context::{AppContext, UiContext};
 use crate::domain::claude_status::start_socket_listener;
 use crate::layout::calculate_pty_sizes;
@@ -140,20 +141,37 @@ fn handle_event(
             }
         }
         event::Event::Tick => {
-            for wt in ctx.worktree_pool.all_mut() {
+            let selected = ctx.app.selected_worktree;
+            let mut selected_pty_died = false;
+            let mut selected_qa_died = false;
+
+            for (i, wt) in ctx.worktree_pool.all_mut().iter_mut().enumerate() {
                 if let Some(pty) = &mut wt.pty
                     && !pty.is_alive()
                 {
                     ctx.status_cache.cleanup(&wt.working_dir());
                     wt.pty = None;
                     needs_render = true;
+                    if i == selected {
+                        selected_pty_died = true;
+                    }
                 }
                 if let Some(qa) = &mut wt.qa_pty
                     && !qa.is_alive()
                 {
                     wt.qa_pty = None;
                     needs_render = true;
+                    if i == selected {
+                        selected_qa_died = true;
+                    }
                 }
+            }
+
+            if selected_pty_died && ctx.app.focus == Focus::Terminal {
+                ctx.app.focus = Focus::Worktrees;
+            }
+            if selected_qa_died && ctx.app.focus == Focus::QaTerminal {
+                ctx.app.focus = Focus::Worktrees;
             }
         }
         _ => {}
