@@ -34,6 +34,7 @@ pub fn handle_scroll_key(
     terminal_pane: &mut TerminalPane,
     key: crossterm::event::KeyEvent,
     qa: bool,
+    config: &crate::config::LayoutConfig,
 ) -> bool {
     // Ctrl+b: enter/continue scroll mode (half page up)
     if key.code == KeyCode::Char('b') && key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -68,7 +69,10 @@ pub fn handle_scroll_key(
             terminal_pane.scroll_down(qa, terminal_half_page_size() * 2);
         }
         KeyCode::Char('v') => {
-            let sizes = crate::layout::current_pty_sizes();
+            let sizes = crate::layout::current_pty_sizes_with_config(
+                config.worktree_pane_percent,
+                config.qa_split_percent,
+            );
             let (rows, cols) = sizes.main_size(qa);
             let viewport_rows = usize::from(rows);
             let viewport_cols = usize::from(cols);

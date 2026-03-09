@@ -1,6 +1,7 @@
 use color_eyre::Result;
 use crossterm::event::KeyEventKind;
 
+use crate::config::KeybindingsConfig;
 use crate::context::{AppContext, UiContext};
 use crate::domain::claude_status::start_socket_listener;
 use crate::layout::calculate_pty_sizes;
@@ -45,7 +46,14 @@ async fn main() -> Result<()> {
     let entries = worktree_manager.scan()?;
     worktree_pool.sync_with_worktrees(&entries);
 
+    let new_worktree_key = config.keybindings.new_worktree;
     let qa_split_percent = config.layout.qa_split_percent;
+    let keybindings = KeybindingsConfig {
+        delete_worktree: config.keybindings.delete_worktree,
+        new_worktree: config.keybindings.new_worktree,
+        open_editor: config.keybindings.open_editor,
+        qa_worktree: config.keybindings.qa_worktree,
+    };
 
     let mut ctx = AppContext {
         app,
@@ -59,16 +67,15 @@ async fn main() -> Result<()> {
     let mut ui = UiContext {
         confirm_dialog: components::confirm_dialog::ConfirmDialog::new(),
         editor_float: components::editor_float::EditorFloat::new(),
-        help_overlay: components::help_overlay::HelpOverlay::new(),
+        help_overlay: components::help_overlay::HelpOverlay::new(keybindings),
         last_worktree_area: None,
         last_terminal_area: None,
         qa_selector: components::qa_selector::QaSelector::new(),
         repo_selector: components::repo_selector::RepoSelector::new(),
-        terminal_pane: {
-            let mut tp = components::terminal_pane::TerminalPane::new();
-            tp.qa_split_percent = qa_split_percent;
-            tp
-        },
+        terminal_pane: components::terminal_pane::TerminalPane::new(
+            new_worktree_key,
+            qa_split_percent,
+        ),
         worktree_tree: components::worktree_tree::WorktreeTree::new(),
     };
 

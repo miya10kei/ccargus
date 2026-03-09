@@ -23,6 +23,7 @@ pub fn handle_qa_terminal_key(
         &mut ui.terminal_pane,
         key,
         true,
+        &ctx.config.layout,
     ) {
         return;
     }
@@ -86,6 +87,7 @@ pub fn handle_terminal_key(
         &mut ui.terminal_pane,
         key,
         false,
+        &ctx.config.layout,
     ) {
         return;
     }

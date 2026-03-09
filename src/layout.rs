@@ -74,11 +74,6 @@ pub fn calculate_pty_sizes(
     }
 }
 
-pub fn current_pty_sizes() -> PtySizes {
-    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-    calculate_pty_sizes(cols, rows, 25, 50)
-}
-
 pub fn current_pty_sizes_with_config(
     worktree_pane_percent: u16,
     qa_split_percent: u16,

@@ -28,7 +28,7 @@ fn default_qa_worktree() -> char {
     's'
 }
 fn default_worktree_pane_percent() -> u16 {
-    25
+    20
 }
 fn default_worktree_base_dir() -> PathBuf {
     dirs::data_dir()
