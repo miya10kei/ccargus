@@ -11,6 +11,35 @@ pub fn handle_worktrees_key(
     key: crossterm::event::KeyEvent,
 ) {
     let kb = &ctx.config.keybindings;
+
+    if kb.delete_worktree.matches(&key) {
+        if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree) {
+            let message = format!("Delete worktree '{}/{}'?", wt.repo, wt.branch);
+            ui.confirm_dialog
+                .open(message, ConfirmAction::DeleteWorktree);
+        }
+        return;
+    }
+
+    if kb.open_editor.matches(&key) {
+        open_editor(ctx);
+        return;
+    }
+
+    if kb.new_worktree.matches(&key) {
+        ui.repo_selector.open();
+        return;
+    }
+
+    if kb.qa_worktree.matches(&key) {
+        if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree)
+            && wt.is_running()
+        {
+            ui.qa_selector.open();
+        }
+        return;
+    }
+
     match key.code {
         KeyCode::Char('q' | 'c')
             if key.code == KeyCode::Char('q') || key.modifiers.contains(KeyModifiers::CONTROL) =>
@@ -18,31 +47,11 @@ pub fn handle_worktrees_key(
             ui.confirm_dialog
                 .open("Quit ccargus?", ConfirmAction::QuitApp);
         }
-        KeyCode::Char(c) if c == kb.delete_worktree => {
-            if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree) {
-                let message = format!("Delete worktree '{}/{}'?", wt.repo, wt.branch);
-                ui.confirm_dialog
-                    .open(message, ConfirmAction::DeleteWorktree);
-            }
-        }
-        KeyCode::Char(c) if c == kb.open_editor => {
-            open_editor(ctx);
-        }
         KeyCode::Char('j') | KeyCode::Down => {
             ctx.app.select_next_worktree(ctx.worktree_pool.len());
         }
         KeyCode::Char('k') | KeyCode::Up => {
             ctx.app.select_prev_worktree(ctx.worktree_pool.len());
-        }
-        KeyCode::Char(c) if c == kb.new_worktree => {
-            ui.repo_selector.open();
-        }
-        KeyCode::Char(c) if c == kb.qa_worktree => {
-            if let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree)
-                && wt.is_running()
-            {
-                ui.qa_selector.open();
-            }
         }
         KeyCode::Char('?') => {
             ui.help_overlay.toggle();
@@ -93,7 +102,7 @@ pub fn handle_worktrees_key(
     }
 }
 
-fn open_editor(ctx: &mut AppContext) {
+pub(crate) fn open_editor(ctx: &mut AppContext) {
     if !domain::tmux::is_running() {
         ctx.notify(
             "エディタを開くにはtmux環境が必要です".to_owned(),

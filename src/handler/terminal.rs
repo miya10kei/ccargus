@@ -5,6 +5,7 @@ use crate::context::{AppContext, UiContext};
 use crate::domain;
 use crate::handler::copy_mode::handle_copy_mode_key;
 use crate::handler::scroll::handle_scroll_key;
+use crate::handler::worktrees;
 use crate::keys::key_to_bytes;
 use crate::layout::current_pty_sizes_with_config;
 
@@ -40,6 +41,11 @@ pub fn handle_qa_terminal_key(
     // Ctrl+w toggles between Terminal and QaTerminal
     if key.code == KeyCode::Char('w') && key.modifiers.contains(KeyModifiers::CONTROL) {
         ctx.app.toggle_terminal_qa_focus();
+        return;
+    }
+
+    if ctx.config.keybindings.terminal_open_editor.matches(&key) {
+        worktrees::open_editor(ctx);
         return;
     }
 
@@ -104,6 +110,11 @@ pub fn handle_terminal_key(
     // Ctrl+w toggles between Terminal and QaTerminal
     if key.code == KeyCode::Char('w') && key.modifiers.contains(KeyModifiers::CONTROL) {
         ctx.app.toggle_terminal_qa_focus();
+        return;
+    }
+
+    if ctx.config.keybindings.terminal_open_editor.matches(&key) {
+        worktrees::open_editor(ctx);
         return;
     }
 

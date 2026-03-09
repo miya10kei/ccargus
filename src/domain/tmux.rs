@@ -20,7 +20,7 @@ pub fn open_editor_popup(
     let escaped_editor = shell_escape(editor_command);
     let escaped_dir = shell_escape(working_dir);
     let inner_cmd = format!(
-        "TMUX='' tmux -L {EDITOR_SOCKET} new-session -A -s {escaped_session} -c {escaped_dir} {escaped_editor} \\; set status off"
+        "TMUX='' tmux -L {EDITOR_SOCKET} new-session -A -s {escaped_session} -c {escaped_dir} {escaped_editor}"
     );
 
     let status = Command::new("tmux")

@@ -310,5 +310,4 @@ mod tests {
         let result = handle_help_overlay_key(&mut env.ctx, &mut env.ui, key(KeyCode::Esc));
         assert!(!result);
     }
-
 }

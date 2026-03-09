@@ -66,6 +66,11 @@ fn build_help_lines(keybindings: &KeybindingsConfig) -> Vec<Line<'static>> {
         Line::from(Span::styled("Terminal Pane", header)),
         help_entry("Tab", "Toggle focus", key),
         help_entry("Ctrl+w", "Switch main/Q&A terminal", key),
+        help_entry(
+            &keybindings.terminal_open_editor.to_string(),
+            "Open editor (tmux popup)",
+            key,
+        ),
         help_entry("Ctrl+b", "Enter scroll mode", key),
         help_entry("Ctrl+d", "Close Q&A session", key),
         Line::from(""),
