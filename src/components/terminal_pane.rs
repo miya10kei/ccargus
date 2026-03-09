@@ -710,4 +710,111 @@ mod tests {
             "Should show scrollback content, got: {text}"
         );
     }
+
+    #[test]
+    fn border_color_copy_mode_returns_magenta() {
+        assert_eq!(
+            TerminalPane::border_color_for(true, true, true),
+            Color::Magenta
+        );
+    }
+
+    #[test]
+    fn border_color_focused_returns_cyan() {
+        assert_eq!(
+            TerminalPane::border_color_for(true, false, false),
+            Color::Cyan
+        );
+    }
+
+    #[test]
+    fn border_color_scrolling_returns_yellow() {
+        assert_eq!(
+            TerminalPane::border_color_for(true, true, false),
+            Color::Yellow
+        );
+    }
+
+    #[test]
+    fn enter_copy_mode_creates_state() {
+        let mut pane = TerminalPane::new();
+        pane.enter_copy_mode(false, 24, 80);
+        assert!(pane.copy_mode.is_some());
+    }
+
+    #[test]
+    fn enter_qa_copy_mode_creates_state() {
+        let mut pane = TerminalPane::new();
+        pane.enter_copy_mode(true, 24, 80);
+        assert!(pane.qa_copy_mode.is_some());
+    }
+
+    #[test]
+    fn exit_copy_mode_clears_state_and_scroll() {
+        let mut pane = TerminalPane::new();
+        pane.enter_copy_mode(false, 24, 80);
+        pane.scroll_offset = 5;
+        pane.exit_copy_mode(false);
+        assert!(pane.copy_mode.is_none());
+        assert_eq!(pane.scroll_offset, 0);
+    }
+
+    #[test]
+    fn exit_qa_copy_mode_clears_state_and_scroll() {
+        let mut pane = TerminalPane::new();
+        pane.enter_copy_mode(true, 24, 80);
+        pane.qa_scroll_offset = 5;
+        pane.exit_copy_mode(true);
+        assert!(pane.qa_copy_mode.is_none());
+        assert_eq!(pane.qa_scroll_offset, 0);
+    }
+
+    #[test]
+    fn is_in_copy_mode_false_by_default() {
+        let pane = TerminalPane::new();
+        assert!(!pane.is_in_copy_mode(false));
+        assert!(!pane.is_in_copy_mode(true));
+    }
+
+    #[test]
+    fn is_in_copy_mode_true_when_set() {
+        let mut pane = TerminalPane::new();
+        pane.enter_copy_mode(false, 24, 80);
+        assert!(pane.is_in_copy_mode(false));
+    }
+
+    #[test]
+    fn renders_copy_indicator_in_title() {
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let parser = Arc::new(Mutex::new(vt100::Parser::new(8, 38, 0)));
+        let copy_state = CopyModeState::new(8, 38);
+
+        let pane = TerminalPane {
+            copy_mode: Some(copy_state),
+            focused: true,
+            qa_copy_mode: None,
+            qa_focused: false,
+            qa_screen: None,
+            qa_scroll_offset: 0,
+            screen: Some(Arc::clone(&parser)),
+            scroll_offset: 0,
+        };
+
+        terminal
+            .draw(|frame| {
+                pane.render(frame, frame.area());
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let text: String = (0..40)
+            .map(|x| buffer[(x, 0)].symbol().to_string())
+            .collect();
+        assert!(
+            text.contains("[COPY]"),
+            "Should contain [COPY] indicator, got: {text}"
+        );
+    }
 }

@@ -309,4 +309,25 @@ mod tests {
             "Should show branch name, got: {row2}"
         );
     }
+
+    #[test]
+    fn selected_list_index_returns_correct_index() {
+        let tree = WorktreeTree {
+            focused: true,
+            selected: 1, // second worktree
+            worktrees: vec![
+                make_entry("s1", "repo-a", "main"),
+                make_entry("s2", "repo-a", "dev"),
+            ],
+        };
+        // repo header (index 0) + main (index 1) + dev (index 2)
+        // selected=1 means "dev", so list_index should be 2
+        assert_eq!(tree.selected_list_index(), Some(2));
+    }
+
+    #[test]
+    fn selected_list_index_returns_none_when_empty() {
+        let tree = WorktreeTree::new();
+        assert!(tree.selected_list_index().is_none());
+    }
 }

@@ -869,4 +869,53 @@ mod tests {
         assert_eq!(pool.len(), 1);
         assert_eq!(pool.get(0).unwrap().branch, "new-branch");
     }
+
+    #[test]
+    fn any_pty_dirty_false_when_no_ptys() {
+        let mut pool = WorktreePool::new();
+        pool.add_stopped("test/repo", "main", "/tmp");
+        let wt = pool.get(0).unwrap();
+        assert!(!wt.any_pty_dirty());
+    }
+
+    #[test]
+    fn close_qa_when_no_qa_is_noop() {
+        let mut pool = WorktreePool::new();
+        pool.add_stopped("test/repo", "main", "/tmp");
+        let wt = pool.get_mut(0).unwrap();
+        wt.close_qa(); // should not panic
+        assert!(!wt.has_qa());
+    }
+
+    #[test]
+    fn has_qa_false_by_default() {
+        let mut pool = WorktreePool::new();
+        pool.add_stopped("test/repo", "main", "/tmp");
+        let wt = pool.get(0).unwrap();
+        assert!(!wt.has_qa());
+    }
+
+    #[test]
+    fn to_entry_and_from_entry_roundtrip() {
+        let entry = WorktreeEntry {
+            branch: "feat".to_string(),
+            repo_name: "github.com/owner/repo".to_string(),
+            source_repo_path: "/src".to_string(),
+            worktree_path: PathBuf::from("/tmp/wt"),
+        };
+        let wt = Worktree::from_entry(&entry);
+        let roundtrip = wt.to_entry();
+        assert_eq!(roundtrip.branch, entry.branch);
+        assert_eq!(roundtrip.repo_name, entry.repo_name);
+        assert_eq!(roundtrip.source_repo_path, entry.source_repo_path);
+        assert_eq!(roundtrip.worktree_path, entry.worktree_path);
+    }
+
+    #[test]
+    fn working_dir_returns_path_string() {
+        let mut pool = WorktreePool::new();
+        pool.add_stopped("test/repo", "main", "/tmp/worktree");
+        let wt = pool.get(0).unwrap();
+        assert_eq!(wt.working_dir(), "/tmp/worktree");
+    }
 }
