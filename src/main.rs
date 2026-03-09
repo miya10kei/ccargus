@@ -223,8 +223,7 @@ fn handle_key_press(
                     let mut wt = domain::worktree::Worktree::from_entry(&entry);
                     let sizes = current_pty_sizes();
                     let _ = wt.start(sizes.single_rows, sizes.single_cols, config.claude.plan);
-                    app.worktree_pool.add(wt);
-                    app.selected_worktree = app.worktree_pool.len().saturating_sub(1);
+                    app.selected_worktree = app.worktree_pool.add(wt);
                     app.focus = Focus::Terminal;
                 }
                 Err(e) => {
