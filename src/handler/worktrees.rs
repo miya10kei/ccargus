@@ -77,6 +77,7 @@ pub fn handle_worktrees_key(
                     if let Err(e) = wt.start(
                         sizes.single_rows,
                         sizes.single_cols,
+                        ctx.config.claude.auto_continue,
                         ctx.config.claude.plan,
                         &ctx.config.claude.command,
                     ) {

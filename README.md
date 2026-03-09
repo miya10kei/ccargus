@@ -115,6 +115,7 @@ ccargus
 
 ```toml
 [claude]
+auto_continue = true                            # 最新セッション自動再開 (default: true)
 command = "claude"                              # Claude Code 実行コマンド (default: "claude")
 plan = false                                    # planning mode で起動 (default: false)
 
