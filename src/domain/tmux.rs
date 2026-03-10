@@ -3,24 +3,64 @@ use std::process::Command;
 use color_eyre::Result;
 use color_eyre::eyre::eyre;
 
-const EDITOR_SOCKET: &str = "ccargus-editor";
+const POPUP_SOCKET: &str = "ccargus-popup";
+
+pub fn has_session(session_name: &str) -> bool {
+    Command::new("tmux")
+        .args(["-L", POPUP_SOCKET, "has-session", "-t", session_name])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+pub fn has_window(session_name: &str, window_name: &str) -> bool {
+    let output = Command::new("tmux")
+        .args([
+            "-L",
+            POPUP_SOCKET,
+            "list-windows",
+            "-t",
+            session_name,
+            "-F",
+            "#{window_name}",
+        ])
+        .output();
+    match output {
+        Ok(out) => String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .any(|line| line == window_name),
+        Err(_) => false,
+    }
+}
 
 pub fn is_running() -> bool {
     check_tmux_env(std::env::var("TMUX").ok())
 }
 
-pub fn open_editor_popup(
+pub fn open_popup(
     options: &[String],
     working_dir: &str,
-    editor_command: &str,
+    command: &str,
     session_name: &str,
+    window_name: &str,
 ) -> Result<()> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_owned());
     let escaped_session = shell_escape(session_name);
-    let escaped_editor = shell_escape(editor_command);
+    let escaped_command = shell_escape(command);
     let escaped_dir = shell_escape(working_dir);
+    let escaped_window = shell_escape(window_name);
+
+    if has_session(session_name) {
+        if has_window(session_name, window_name) {
+            select_window(session_name, window_name)?;
+        } else {
+            create_window_in_session(session_name, working_dir, command, window_name)?;
+        }
+    }
+
     let inner_cmd = format!(
-        "TMUX='' tmux -L {EDITOR_SOCKET} new-session -A -s {escaped_session} -c {escaped_dir} {escaped_editor}"
+        "TMUX='' tmux -L {POPUP_SOCKET} new-session -A -s {escaped_session} -n {escaped_window} -c {escaped_dir} {escaped_command}"
     );
 
     let status = Command::new("tmux")
@@ -40,6 +80,39 @@ pub fn open_editor_popup(
     Ok(())
 }
 
+fn check_tmux_env(tmux_var: Option<String>) -> bool {
+    tmux_var.is_some_and(|v| !v.is_empty())
+}
+
+fn create_window_in_session(
+    session_name: &str,
+    working_dir: &str,
+    command: &str,
+    window_name: &str,
+) -> Result<()> {
+    let escaped_session = shell_escape(session_name);
+    let escaped_command = shell_escape(command);
+    let escaped_dir = shell_escape(working_dir);
+    let escaped_window = shell_escape(window_name);
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_owned());
+    let inner_cmd = format!(
+        "TMUX='' tmux -L {POPUP_SOCKET} new-window -t {escaped_session} -n {escaped_window} -c {escaped_dir} {escaped_command}"
+    );
+
+    let status = Command::new("tmux")
+        .args(["-L", POPUP_SOCKET])
+        .arg("run-shell")
+        .arg(format!("{shell} -c {}", shell_escape(&inner_cmd)))
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()?;
+
+    if !status.success() {
+        return Err(eyre!("tmux new-window exited with status: {status}"));
+    }
+    Ok(())
+}
+
 pub fn sanitize_session_name(name: &str) -> String {
     name.chars()
         .map(|c| {
@@ -52,8 +125,17 @@ pub fn sanitize_session_name(name: &str) -> String {
         .collect()
 }
 
-fn check_tmux_env(tmux_var: Option<String>) -> bool {
-    tmux_var.is_some_and(|v| !v.is_empty())
+fn select_window(session_name: &str, window_name: &str) -> Result<()> {
+    let target = format!("{session_name}:{window_name}");
+    let status = Command::new("tmux")
+        .args(["-L", POPUP_SOCKET, "select-window", "-t", &target])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()?;
+    if !status.success() {
+        return Err(eyre!("tmux select-window exited with status: {status}"));
+    }
+    Ok(())
 }
 
 fn shell_escape(s: &str) -> String {

@@ -26,6 +26,11 @@ pub fn handle_worktrees_key(
         return;
     }
 
+    if kb.open_shell.matches(&key) {
+        open_shell(ctx);
+        return;
+    }
+
     if kb.new_worktree.matches(&key) {
         ui.repo_selector.open();
         return;
@@ -116,14 +121,43 @@ pub(crate) fn open_editor(ctx: &mut AppContext) {
     };
     let session =
         domain::tmux::sanitize_session_name(&format!("ccargus-{}-{}", wt.repo, wt.branch));
-    if let Err(e) = domain::tmux::open_editor_popup(
-        &ctx.config.editor.popup.options,
+    if let Err(e) = domain::tmux::open_popup(
+        &ctx.config.popup.options,
         &wt.working_dir(),
         &ctx.config.editor.command,
         &session,
+        "editor",
     ) {
         ctx.notify(
             format!("Failed to open editor: {e}"),
+            crate::context::NotificationLevel::Error,
+        );
+    }
+}
+
+pub(crate) fn open_shell(ctx: &mut AppContext) {
+    if !domain::tmux::is_running() {
+        ctx.notify(
+            "シェルを開くにはtmux環境が必要です".to_owned(),
+            crate::context::NotificationLevel::Error,
+        );
+        return;
+    }
+    let Some(wt) = ctx.worktree_pool.get(ctx.app.selected_worktree) else {
+        return;
+    };
+    let session =
+        domain::tmux::sanitize_session_name(&format!("ccargus-{}-{}", wt.repo, wt.branch));
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_owned());
+    if let Err(e) = domain::tmux::open_popup(
+        &ctx.config.popup.options,
+        &wt.working_dir(),
+        &shell,
+        &session,
+        "shell",
+    ) {
+        ctx.notify(
+            format!("Failed to open shell: {e}"),
             crate::context::NotificationLevel::Error,
         );
     }
