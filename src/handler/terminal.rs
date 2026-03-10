@@ -49,6 +49,11 @@ pub fn handle_qa_terminal_key(
         return;
     }
 
+    if ctx.config.keybindings.terminal_open_shell.matches(&key) {
+        worktrees::open_shell(ctx);
+        return;
+    }
+
     // Ctrl+d closes Q&A
     if key.code == KeyCode::Char('d') && key.modifiers.contains(KeyModifiers::CONTROL) {
         if let Some(wt) = ctx.worktree_pool.get_mut(ctx.app.selected_worktree) {
@@ -115,6 +120,11 @@ pub fn handle_terminal_key(
 
     if ctx.config.keybindings.terminal_open_editor.matches(&key) {
         worktrees::open_editor(ctx);
+        return;
+    }
+
+    if ctx.config.keybindings.terminal_open_shell.matches(&key) {
+        worktrees::open_shell(ctx);
         return;
     }
 

@@ -54,6 +54,11 @@ fn build_help_lines(keybindings: &KeybindingsConfig) -> Vec<Line<'static>> {
             key,
         ),
         help_entry(
+            &keybindings.open_shell.to_string(),
+            "Open shell (tmux popup)",
+            key,
+        ),
+        help_entry(
             &keybindings.qa_worktree.to_string(),
             "Start Q&A session",
             key,
@@ -69,6 +74,11 @@ fn build_help_lines(keybindings: &KeybindingsConfig) -> Vec<Line<'static>> {
         help_entry(
             &keybindings.terminal_open_editor.to_string(),
             "Open editor (tmux popup)",
+            key,
+        ),
+        help_entry(
+            &keybindings.terminal_open_shell.to_string(),
+            "Open shell (tmux popup)",
             key,
         ),
         help_entry("Ctrl+b", "Enter scroll mode", key),

@@ -150,6 +150,9 @@ fn default_new_worktree() -> Keybinding {
 fn default_open_editor() -> Keybinding {
     Keybinding::plain('e')
 }
+fn default_open_shell() -> Keybinding {
+    Keybinding::plain('t')
+}
 fn default_protected_branches() -> Vec<String> {
     vec!["main".to_owned(), "master".to_owned(), "develop".to_owned()]
 }
@@ -161,6 +164,9 @@ fn default_qa_worktree() -> Keybinding {
 }
 fn default_terminal_open_editor() -> Keybinding {
     Keybinding::ctrl('e')
+}
+fn default_terminal_open_shell() -> Keybinding {
+    Keybinding::ctrl('t')
 }
 fn default_worktree_pane_percent() -> u16 {
     20
@@ -207,6 +213,8 @@ pub struct Config {
     #[serde(default)]
     pub layout: LayoutConfig,
     #[serde(default)]
+    pub popup: PopupConfig,
+    #[serde(default)]
     pub worktree: WorktreeConfig,
 }
 
@@ -214,12 +222,10 @@ pub struct Config {
 pub struct EditorConfig {
     #[serde(default = "default_editor_command")]
     pub command: String,
-    #[serde(default)]
-    pub popup: EditorPopupConfig,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct EditorPopupConfig {
+pub struct PopupConfig {
     #[serde(default = "default_popup_options")]
     pub options: Vec<String>,
 }
@@ -232,22 +238,25 @@ pub struct KeybindingsConfig {
     pub new_worktree: Keybinding,
     #[serde(default = "default_open_editor")]
     pub open_editor: Keybinding,
+    #[serde(default = "default_open_shell")]
+    pub open_shell: Keybinding,
     #[serde(default = "default_qa_worktree")]
     pub qa_worktree: Keybinding,
     #[serde(default = "default_terminal_open_editor")]
     pub terminal_open_editor: Keybinding,
+    #[serde(default = "default_terminal_open_shell")]
+    pub terminal_open_shell: Keybinding,
 }
 
 impl Default for EditorConfig {
     fn default() -> Self {
         Self {
             command: default_editor_command(),
-            popup: EditorPopupConfig::default(),
         }
     }
 }
 
-impl Default for EditorPopupConfig {
+impl Default for PopupConfig {
     fn default() -> Self {
         Self {
             options: default_popup_options(),
@@ -261,8 +270,10 @@ impl Default for KeybindingsConfig {
             delete_worktree: default_delete_worktree(),
             new_worktree: default_new_worktree(),
             open_editor: default_open_editor(),
+            open_shell: default_open_shell(),
             qa_worktree: default_qa_worktree(),
             terminal_open_editor: default_terminal_open_editor(),
+            terminal_open_shell: default_terminal_open_shell(),
         }
     }
 }
@@ -349,8 +360,10 @@ impl Config {
             ("delete_worktree", &kb.delete_worktree),
             ("new_worktree", &kb.new_worktree),
             ("open_editor", &kb.open_editor),
+            ("open_shell", &kb.open_shell),
             ("qa_worktree", &kb.qa_worktree),
             ("terminal_open_editor", &kb.terminal_open_editor),
+            ("terminal_open_shell", &kb.terminal_open_shell),
         ];
         for i in 0..bindings.len() {
             for j in (i + 1)..bindings.len() {
@@ -370,11 +383,16 @@ impl Config {
             Keybinding::ctrl('d'),
             Keybinding::ctrl('b'),
         ];
-        if reserved_terminal.contains(&kb.terminal_open_editor) {
-            return Err(color_eyre::eyre::eyre!(
-                "terminal_open_editor '{}' conflicts with reserved terminal shortcut",
-                kb.terminal_open_editor,
-            ));
+        for (name, binding) in [
+            ("terminal_open_editor", &kb.terminal_open_editor),
+            ("terminal_open_shell", &kb.terminal_open_shell),
+        ] {
+            if reserved_terminal.contains(binding) {
+                return Err(color_eyre::eyre::eyre!(
+                    "{name} '{}' conflicts with reserved terminal shortcut",
+                    binding,
+                ));
+            }
         }
 
         Ok(())
@@ -538,15 +556,14 @@ mod tests {
         assert!(config.claude.auto_continue);
         assert!(!config.claude.plan);
         assert_eq!(config.editor.command, "vim");
-        assert_eq!(
-            config.editor.popup.options,
-            vec!["-E", "-w", "80%", "-h", "80%"]
-        );
+        assert_eq!(config.popup.options, vec!["-E", "-w", "80%", "-h", "80%"]);
         assert_eq!(config.keybindings.new_worktree, kb('n'));
         assert_eq!(config.keybindings.delete_worktree, kb('d'));
         assert_eq!(config.keybindings.open_editor, kb('e'));
+        assert_eq!(config.keybindings.open_shell, kb('t'));
         assert_eq!(config.keybindings.qa_worktree, kb('s'));
         assert_eq!(config.keybindings.terminal_open_editor, kb_ctrl('e'));
+        assert_eq!(config.keybindings.terminal_open_shell, kb_ctrl('t'));
         assert!(config.worktree.base_dir.ends_with("ccargus/worktrees"));
     }
 
@@ -560,15 +577,17 @@ plan = true
 [editor]
 command = "nvim"
 
-[editor.popup]
+[popup]
 options = ["-E", "-w", "90%", "-h", "90%"]
 
 [keybindings]
 new_worktree = "a"
 delete_worktree = "x"
 open_editor = "o"
+open_shell = "r"
 qa_worktree = "q"
 terminal_open_editor = "<C-o>"
+terminal_open_shell = "<C-r>"
 
 [worktree]
 base_dir = "/custom/worktrees"
@@ -577,15 +596,14 @@ base_dir = "/custom/worktrees"
         assert!(!config.claude.auto_continue);
         assert!(config.claude.plan);
         assert_eq!(config.editor.command, "nvim");
-        assert_eq!(
-            config.editor.popup.options,
-            vec!["-E", "-w", "90%", "-h", "90%"]
-        );
+        assert_eq!(config.popup.options, vec!["-E", "-w", "90%", "-h", "90%"]);
         assert_eq!(config.keybindings.new_worktree, kb('a'));
         assert_eq!(config.keybindings.delete_worktree, kb('x'));
         assert_eq!(config.keybindings.open_editor, kb('o'));
+        assert_eq!(config.keybindings.open_shell, kb('r'));
         assert_eq!(config.keybindings.qa_worktree, kb('q'));
         assert_eq!(config.keybindings.terminal_open_editor, kb_ctrl('o'));
+        assert_eq!(config.keybindings.terminal_open_shell, kb_ctrl('r'));
         assert_eq!(config.worktree.base_dir, PathBuf::from("/custom/worktrees"));
     }
 
@@ -619,15 +637,14 @@ command = "emacs"
         assert!(config.claude.auto_continue);
         assert!(!config.claude.plan);
         assert_eq!(config.editor.command, "emacs");
-        assert_eq!(
-            config.editor.popup.options,
-            vec!["-E", "-w", "80%", "-h", "80%"]
-        );
+        assert_eq!(config.popup.options, vec!["-E", "-w", "80%", "-h", "80%"]);
         assert_eq!(config.keybindings.new_worktree, kb('n'));
         assert_eq!(config.keybindings.delete_worktree, kb('d'));
         assert_eq!(config.keybindings.open_editor, kb('e'));
+        assert_eq!(config.keybindings.open_shell, kb('t'));
         assert_eq!(config.keybindings.qa_worktree, kb('s'));
         assert_eq!(config.keybindings.terminal_open_editor, kb_ctrl('e'));
+        assert_eq!(config.keybindings.terminal_open_shell, kb_ctrl('t'));
         assert!(config.worktree.base_dir.ends_with("ccargus/worktrees"));
     }
 
@@ -638,7 +655,9 @@ command = "emacs"
         assert!(!config.claude.plan);
         assert_eq!(config.editor.command, "vim");
         assert_eq!(config.keybindings.new_worktree, kb('n'));
+        assert_eq!(config.keybindings.open_shell, kb('t'));
         assert_eq!(config.keybindings.terminal_open_editor, kb_ctrl('e'));
+        assert_eq!(config.keybindings.terminal_open_shell, kb_ctrl('t'));
         assert!(config.worktree.base_dir.ends_with("ccargus/worktrees"));
     }
 
@@ -745,6 +764,24 @@ base_dir = "~/my/worktrees"
         let mut config = Config::default();
         config.keybindings.terminal_open_editor = kb_ctrl('b');
         let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("conflicts with reserved terminal shortcut"));
+    }
+
+    #[test]
+    fn validate_rejects_terminal_open_shell_ctrl_w() {
+        let mut config = Config::default();
+        config.keybindings.terminal_open_shell = kb_ctrl('w');
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("terminal_open_shell"));
+        assert!(err.contains("conflicts with reserved terminal shortcut"));
+    }
+
+    #[test]
+    fn validate_rejects_terminal_open_shell_ctrl_d() {
+        let mut config = Config::default();
+        config.keybindings.terminal_open_shell = kb_ctrl('d');
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("terminal_open_shell"));
         assert!(err.contains("conflicts with reserved terminal shortcut"));
     }
 }
