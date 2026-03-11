@@ -7,5 +7,5 @@ pub mod worktree;
 pub mod worktree_entry;
 pub mod worktree_manager;
 
-pub use git::{branch_exists, list_local_branches};
+pub use git::list_local_branches;
 pub use worktree_manager::WorktreeManager;

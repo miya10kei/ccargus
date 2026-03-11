@@ -6,8 +6,8 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragra
 
 use crate::components::Component;
 use crate::components::utils::centered_rect_percent;
+use crate::domain::list_local_branches;
 use crate::domain::repo::{Repository, filter_repositories, list_repositories};
-use crate::domain::{branch_exists, list_local_branches};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectorStep {
@@ -33,6 +33,7 @@ pub struct RepoSelector {
     local_branches: Vec<String>,
     repo_list_state: ListState,
     repositories: Vec<Repository>,
+    selected_base_branch: Option<String>,
     selected_repo: Option<Repository>,
     step: SelectorStep,
 }
@@ -48,6 +49,7 @@ impl RepoSelector {
             repo_list_state: ListState::default(),
             repositories: Vec::new(),
             result: None,
+            selected_base_branch: None,
             selected_repo: None,
             step: SelectorStep::SelectRepo,
             visible: false,
@@ -64,6 +66,7 @@ impl RepoSelector {
         self.branch_input.clear();
         self.filter_query.clear();
         self.result = None;
+        self.selected_base_branch = None;
         self.selected_repo = None;
 
         match list_repositories() {
@@ -81,44 +84,18 @@ impl RepoSelector {
         self.result.take()
     }
 
-    fn confirm_base_branch(&mut self) {
-        let filtered = self.filtered_local_branches();
-        if let Some(idx) = self.base_branch_list_state.selected()
-            && let Some(&base) = filtered.get(idx)
-        {
-            let base = base.to_owned();
-            if let Some(repo) = &self.selected_repo {
-                self.result = Some(SelectionResult {
-                    base_branch: Some(base),
-                    branch: self.branch_input.trim().to_string(),
-                    repo: repo.clone(),
-                });
-                self.visible = false;
-            }
-        }
-    }
-
     fn confirm_branch(&mut self) {
         let branch = self.branch_input.trim().to_string();
         if branch.is_empty() {
             return;
         }
         if let Some(repo) = &self.selected_repo {
-            if branch_exists(&repo.path, &branch).unwrap_or(false) {
-                // Existing branch: skip base branch selection
-                self.result = Some(SelectionResult {
-                    base_branch: None,
-                    branch,
-                    repo: repo.clone(),
-                });
-                self.visible = false;
-            } else {
-                // New branch: transition to base branch selection
-                self.local_branches = list_local_branches(&repo.path).unwrap_or_default();
-                self.base_branch_filter.clear();
-                self.base_branch_list_state.select(Some(0));
-                self.step = SelectorStep::SelectBaseBranch;
-            }
+            self.result = Some(SelectionResult {
+                base_branch: self.selected_base_branch.clone(),
+                branch,
+                repo: repo.clone(),
+            });
+            self.visible = false;
         }
     }
 
@@ -188,7 +165,7 @@ impl RepoSelector {
 
         let input = Paragraph::new(format!("  {}", self.base_branch_filter)).block(
             Block::default()
-                .title(format!(" Base Branch for '{}' ", self.branch_input.trim()))
+                .title(" Select Base Branch ")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan)),
         );
@@ -270,15 +247,28 @@ impl RepoSelector {
         frame.render_stateful_widget(list, layout[1], &mut state);
     }
 
+    fn select_base_branch(&mut self) {
+        let filtered = self.filtered_local_branches();
+        if let Some(idx) = self.base_branch_list_state.selected()
+            && let Some(&base) = filtered.get(idx)
+        {
+            self.selected_base_branch = Some(base.to_owned());
+            self.step = SelectorStep::InputBranchName;
+            self.branch_input.clear();
+        }
+    }
+
     fn select_repo(&mut self) {
         let filtered = self.filtered_repos();
         if let Some(idx) = self.repo_list_state.selected()
             && let Some(repo) = filtered.get(idx)
         {
             let repo = (*repo).clone();
-            self.selected_repo = Some(repo);
-            self.step = SelectorStep::InputBranchName;
-            self.branch_input.clear();
+            self.selected_repo = Some(repo.clone());
+            self.local_branches = list_local_branches(&repo.path).unwrap_or_default();
+            self.base_branch_filter.clear();
+            self.base_branch_list_state.select(Some(0));
+            self.step = SelectorStep::SelectBaseBranch;
         }
     }
 }
@@ -292,10 +282,10 @@ impl Component for RepoSelector {
         match key.code {
             KeyCode::Esc => match self.step {
                 SelectorStep::InputBranchName => {
-                    self.step = SelectorStep::SelectRepo;
+                    self.step = SelectorStep::SelectBaseBranch;
                 }
                 SelectorStep::SelectBaseBranch => {
-                    self.step = SelectorStep::InputBranchName;
+                    self.step = SelectorStep::SelectRepo;
                 }
                 SelectorStep::SelectRepo => {
                     self.close();
@@ -303,7 +293,7 @@ impl Component for RepoSelector {
             },
             KeyCode::Enter => match self.step {
                 SelectorStep::InputBranchName => self.confirm_branch(),
-                SelectorStep::SelectBaseBranch => self.confirm_base_branch(),
+                SelectorStep::SelectBaseBranch => self.select_base_branch(),
                 SelectorStep::SelectRepo => self.select_repo(),
             },
             KeyCode::Up => self.move_up(),
@@ -410,88 +400,26 @@ mod tests {
             path: "/tmp".to_string(),
             name: "test".to_string(),
         });
+        selector.selected_base_branch = Some("main".to_string());
         selector.branch_input = "  ".to_string();
         selector.confirm_branch();
         assert!(selector.result.is_none());
     }
 
     #[test]
-    fn confirm_branch_existing_branch_sets_result() {
-        let tmp = tempfile::tempdir().unwrap();
-        let repo_path = tmp.path().join("repo");
-        std::fs::create_dir_all(&repo_path).unwrap();
-        std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(&repo_path)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args([
-                "-c",
-                "user.name=test",
-                "-c",
-                "user.email=test@test.com",
-                "commit",
-                "--allow-empty",
-                "-m",
-                "init",
-            ])
-            .current_dir(&repo_path)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["branch", "feat-existing"])
-            .current_dir(&repo_path)
-            .output()
-            .unwrap();
-
+    fn confirm_branch_creates_result_with_base_branch() {
         let mut selector = RepoSelector::new();
         selector.selected_repo = Some(Repository {
-            path: repo_path.to_string_lossy().to_string(),
-            name: "test/repo".to_string(),
+            path: "/tmp".to_string(),
+            name: "test".to_string(),
         });
-        selector.branch_input = "feat-existing".to_string();
+        selector.selected_base_branch = Some("main".to_string());
+        selector.branch_input = "feat-new".to_string();
         selector.confirm_branch();
         let result = selector.result.as_ref().unwrap();
-        assert_eq!(result.branch, "feat-existing");
-        assert!(result.base_branch.is_none());
-    }
-
-    #[test]
-    fn confirm_branch_new_branch_transitions_to_select_base() {
-        let tmp = tempfile::tempdir().unwrap();
-        let repo_path = tmp.path().join("repo");
-        std::fs::create_dir_all(&repo_path).unwrap();
-        std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(&repo_path)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args([
-                "-c",
-                "user.name=test",
-                "-c",
-                "user.email=test@test.com",
-                "commit",
-                "--allow-empty",
-                "-m",
-                "init",
-            ])
-            .current_dir(&repo_path)
-            .output()
-            .unwrap();
-
-        let mut selector = RepoSelector::new();
-        selector.selected_repo = Some(Repository {
-            path: repo_path.to_string_lossy().to_string(),
-            name: "test/repo".to_string(),
-        });
-        selector.branch_input = "feat-new-branch".to_string();
-        selector.confirm_branch();
-        assert!(selector.result.is_none());
-        assert_eq!(selector.step, SelectorStep::SelectBaseBranch);
-        assert!(!selector.local_branches.is_empty());
+        assert_eq!(result.branch, "feat-new");
+        assert_eq!(result.base_branch.as_deref(), Some("main"));
+        assert!(!selector.visible);
     }
 
     #[test]
@@ -522,26 +450,26 @@ mod tests {
     }
 
     #[test]
-    fn esc_from_base_branch_goes_back_to_branch_input() {
+    fn esc_from_base_branch_goes_back_to_repo_select() {
         let mut selector = RepoSelector::new();
         selector.visible = true;
         selector.step = SelectorStep::SelectBaseBranch;
 
         let key = KeyEvent::new(KeyCode::Esc, crossterm::event::KeyModifiers::NONE);
         selector.handle_key_event(key);
-        assert_eq!(selector.step, SelectorStep::InputBranchName);
+        assert_eq!(selector.step, SelectorStep::SelectRepo);
         assert!(selector.visible);
     }
 
     #[test]
-    fn esc_from_branch_input_goes_back_to_repo_select() {
+    fn esc_from_branch_input_goes_back_to_base_branch() {
         let mut selector = RepoSelector::new();
         selector.visible = true;
         selector.step = SelectorStep::InputBranchName;
 
         let key = KeyEvent::new(KeyCode::Esc, crossterm::event::KeyModifiers::NONE);
         selector.handle_key_event(key);
-        assert_eq!(selector.step, SelectorStep::SelectRepo);
+        assert_eq!(selector.step, SelectorStep::SelectBaseBranch);
         assert!(selector.visible);
     }
 
@@ -554,6 +482,18 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Esc, crossterm::event::KeyModifiers::NONE);
         selector.handle_key_event(key);
         assert!(!selector.visible);
+    }
+
+    #[test]
+    fn select_base_branch_stores_selection_and_transitions() {
+        let mut selector = RepoSelector::new();
+        selector.step = SelectorStep::SelectBaseBranch;
+        selector.local_branches = vec!["main".to_string(), "develop".to_string()];
+        selector.base_branch_list_state.select(Some(1));
+        selector.select_base_branch();
+        assert_eq!(selector.selected_base_branch.as_deref(), Some("develop"));
+        assert_eq!(selector.step, SelectorStep::InputBranchName);
+        assert!(selector.branch_input.is_empty());
     }
 
     #[test]
