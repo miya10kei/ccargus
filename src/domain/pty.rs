@@ -7,6 +7,8 @@ use color_eyre::Result;
 use color_eyre::eyre::eyre;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
+use crate::domain::tmux::shell_escape;
+
 pub struct PtySession {
     child: Box<dyn portable_pty::Child + Send + Sync>,
     dirty: Arc<AtomicBool>,
@@ -40,10 +42,12 @@ impl PtySession {
             })
             .map_err(|e| eyre!("Failed to open PTY: {e}"))?;
 
-        let mut command = CommandBuilder::new(cmd);
-        for arg in args {
-            command.arg(arg);
-        }
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_owned());
+        let full_cmd = build_shell_command(cmd, args);
+        let mut command = CommandBuilder::new(&shell);
+        command.arg("-i");
+        command.arg("-c");
+        command.arg(&full_cmd);
         command.cwd(working_dir);
 
         let child = pair
@@ -160,11 +164,38 @@ impl Drop for PtySession {
     }
 }
 
+fn build_shell_command(cmd: &str, args: &[&str]) -> String {
+    let mut parts = vec![shell_escape(cmd)];
+    parts.extend(args.iter().map(|a| shell_escape(a)));
+    parts.join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[test]
+    fn build_shell_command_without_args() {
+        assert_eq!(build_shell_command("claude", &[]), "'claude'");
+    }
+
+    #[test]
+    fn build_shell_command_with_args() {
+        assert_eq!(
+            build_shell_command("claude", &["--continue", "--permission-mode", "plan"]),
+            "'claude' '--continue' '--permission-mode' 'plan'"
+        );
+    }
+
+    #[test]
+    fn build_shell_command_escapes_single_quotes() {
+        assert_eq!(
+            build_shell_command("claude", &["--flag=it's"]),
+            "'claude' '--flag=it'\\''s'"
+        );
+    }
 
     #[test]
     fn spawn_echo_succeeds() {
