@@ -138,7 +138,7 @@ fn select_window(session_name: &str, window_name: &str) -> Result<()> {
     Ok(())
 }
 
-fn shell_escape(s: &str) -> String {
+pub(crate) fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
