@@ -144,10 +144,23 @@ jobs:
           # Remove leading spaces from heredoc
           sed -i 's/^          //' Formula/ccargus.rb
 
-      - name: Commit and push Formula
+      - name: Create Formula PR
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          TAG="${{ github.event.release.tag_name }}"
+          BRANCH="chore/homebrew-formula-${TAG}"
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "${BRANCH}"
           git add Formula/ccargus.rb
-          git commit -m "Update Homebrew Formula for ${{ github.event.release.tag_name }}"
-          git push origin HEAD:main
+          git commit -m "Update Homebrew Formula for ${TAG}"
+          git push origin "${BRANCH}"
+
+          gh pr create \
+            --title "🍺 Homebrew Formula を ${TAG} に更新" \
+            --body "リリース ${TAG} に合わせてHomebrew Formulaを自動更新" \
+            --base main \
+            --head "${BRANCH}"
+          gh pr merge "${BRANCH}" --auto --squash
