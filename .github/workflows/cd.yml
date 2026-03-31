@@ -18,10 +18,13 @@ jobs:
       matrix:
         include:
           - target: aarch64-apple-darwin
+            asset_name: darwin-arm64
             runner: macos-latest
           - target: x86_64-apple-darwin
-            runner: macos-13
+            asset_name: darwin-x64
+            runner: macos-latest
           - target: x86_64-unknown-linux-gnu
+            asset_name: linux-x64
             runner: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -46,7 +49,7 @@ jobs:
       - name: Create archive
         run: |
           TAG="${{ github.event.release.tag_name }}"
-          ARCHIVE="ccargus-${TAG}-${{ matrix.target }}.tar.gz"
+          ARCHIVE="ccargus-${TAG}-${{ matrix.asset_name }}.tar.gz"
           tar -czf "${ARCHIVE}" \
             -C target/${{ matrix.target }}/release \
             ccargus ccargus-notify
@@ -56,7 +59,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ccargus-${{ matrix.target }}
+          name: ccargus-${{ matrix.asset_name }}
           path: |
             ${{ env.ARCHIVE }}
             ${{ env.ARCHIVE }}.sha256
@@ -98,9 +101,9 @@ jobs:
           TAG="${{ github.event.release.tag_name }}"
           VERSION="${TAG#v}"
 
-          SHA_AARCH64_APPLE=$(awk '{print $1}' "artifacts/ccargus-${TAG}-aarch64-apple-darwin.tar.gz.sha256")
-          SHA_X86_64_APPLE=$(awk '{print $1}' "artifacts/ccargus-${TAG}-x86_64-apple-darwin.tar.gz.sha256")
-          SHA_X86_64_LINUX=$(awk '{print $1}' "artifacts/ccargus-${TAG}-x86_64-unknown-linux-gnu.tar.gz.sha256")
+          SHA_AARCH64_APPLE=$(awk '{print $1}' "artifacts/ccargus-${TAG}-darwin-arm64.tar.gz.sha256")
+          SHA_X86_64_APPLE=$(awk '{print $1}' "artifacts/ccargus-${TAG}-darwin-x64.tar.gz.sha256")
+          SHA_X86_64_LINUX=$(awk '{print $1}' "artifacts/ccargus-${TAG}-linux-x64.tar.gz.sha256")
 
           cat > Formula/ccargus.rb << FORMULA
           class Ccargus < Formula
@@ -111,18 +114,18 @@ jobs:
 
             on_macos do
               on_arm do
-                url "https://github.com/miya10kei/ccargus/releases/download/${TAG}/ccargus-${TAG}-aarch64-apple-darwin.tar.gz"
+                url "https://github.com/miya10kei/ccargus/releases/download/${TAG}/ccargus-${TAG}-darwin-arm64.tar.gz"
                 sha256 "${SHA_AARCH64_APPLE}"
               end
               on_intel do
-                url "https://github.com/miya10kei/ccargus/releases/download/${TAG}/ccargus-${TAG}-x86_64-apple-darwin.tar.gz"
+                url "https://github.com/miya10kei/ccargus/releases/download/${TAG}/ccargus-${TAG}-darwin-x64.tar.gz"
                 sha256 "${SHA_X86_64_APPLE}"
               end
             end
 
             on_linux do
               on_intel do
-                url "https://github.com/miya10kei/ccargus/releases/download/${TAG}/ccargus-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
+                url "https://github.com/miya10kei/ccargus/releases/download/${TAG}/ccargus-${TAG}-linux-x64.tar.gz"
                 sha256 "${SHA_X86_64_LINUX}"
               end
             end
